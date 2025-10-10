@@ -113,7 +113,9 @@ JSON
   "prejuizoMaximo": 332.00,
   "breakevenPoint": 142.00
 }
+
+
 ✒️ Autor
-[Seu Nome / Seu Usuário no GitHub]
+[Márcio Almeida de Souza / https://github.com/marciosouzagcm]
 
 (Você pode adicionar links para o seu LinkedIn ou outras redes sociais no final.)
