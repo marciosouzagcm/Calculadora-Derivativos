@@ -1,489 +1,635 @@
 import pandas as pd
 import numpy as np
-import os
-import math 
+from datetime import datetime
+from math import log, sqrt, exp, pi, isnan, inf
 
 # =========================================================================
-# 1. CONSTANTES DE OPERAÇÃO (Simulam dados fixos do sistema)
+# 1. CONSTANTES E CONFIGURAÇÃO
 # =========================================================================
-QUANTIDADE_CONTRATOS = 100      # Lote padrão (10 lotes de 100)
-TAXAS_TOTAIS_OPERACAO = 44.00    # Simula taxas totais em R$
 
-# FATOR CRÍTICO: Definimos como 1.0 porque o strike já está na 
-# escala R$ por unidade (Ex: 137.00 no CSV), e não em centavos.
-FATOR_STRIKE_UNITARIO = 1.0   # Fator de conversão (137.00 / 1.0 = 137.00 R$)
+# Nome do arquivo CSV gerado pelo script de limpeza
+NOME_ARQUIVO_CSV = 'opcoes_final_tratado.csv'
+
+# Parâmetros de Mercado (Ajuste conforme necessário para o cálculo Black-Scholes)
+TAXA_JUROS_ANUAL = 0.10 
+
+# Parâmetros de CÁLCULO TOTAL
+QUANTIDADE_CONTRATOS = 100 # Lote padrão (100 contratos)
+TAXAS_TOTAIS_OPERACAO = 44.00 # Simula taxas totais em R$
+
+# Parâmetro de QUALIDADE OBRIGATÓRIO (NOVO)
+MIN_RISCO_RETORNO_LIQUIDO = 1.0 # Exige que o lucro máximo seja pelo menos igual ao prejuízo máximo.
 
 # =========================================================================
-# FUNÇÃO DE FORMATAÇÃO (Correção da Pontuação CRÍTICA para grandes números)
+# 2. FUNÇÕES DE SUPORTE
 # =========================================================================
 
 def formatar_moeda_br(valor):
     """
     Formata um valor float para o padrão de moeda brasileiro (X.XXX,XX).
-    Usa manipulação de string para robustez, evitando problemas de locale/ambiente.
     """
-    if valor is None or math.isnan(valor):
+    if valor is None or isnan(valor) or valor in (inf, -inf):
         return "N/A"
     
+    # Se o valor for muito próximo de zero, tratamos como zero para evitar -R$ 0,00
+    if abs(valor) < 0.005:
+        return "R$ 0,00"
+        
     # 1. Formata o valor para string com 2 casas decimais
-    valor_str = f"{valor:.2f}"
+    valor_str = f"{abs(valor):.2f}"
     
     # Separa a parte inteira e decimal
     if '.' in valor_str:
         parte_inteira, parte_decimal = valor_str.split('.')
     else:
-        parte_inteira = valor_str
+        # Garante a formatação correta caso o valor seja um inteiro (e.g., '10' se torna '10,00')
+        parte_inteira = valor_str.split('.')[0]
         parte_decimal = '00'
 
-    # 2. Insere o separador de milhares (ponto) na parte inteira (ex: 141000 -> 141.000)
+    # 2. Insere o separador de milhares (ponto)
     inteira_formatada = ""
-    # Itera de trás para frente
     for i, digito in enumerate(reversed(parte_inteira)):
         if i > 0 and i % 3 == 0:
-            # Insere o ponto a cada 3 dígitos (exceto no primeiro)
             inteira_formatada += "."
         inteira_formatada += digito
         
-    # 3. Reverte a string formatada e adiciona a vírgula decimal
-    return "".join(reversed(inteira_formatada)) + "," + parte_decimal
-
-
-# =========================================================================
-# 2. FUNÇÕES AUXILIARES
-# =========================================================================
-
-def buscar_metrics_do_csv(df_opcoes, ativo, strike, tipo):
-    """
-    Busca todas as métricas (VI, Delta, Gamma, Theta, Vega) no DataFrame.
-    """
-    resultado = df_opcoes[
-        (df_opcoes['idAcao'] == ativo) & 
-        (df_opcoes['strike'] == strike) &
-        (df_opcoes['tipo'] == tipo)
-    ]
+    # 3. Adiciona o sinal e a vírgula decimal
+    resultado = "".join(reversed(inteira_formatada)) + "," + parte_decimal
     
-    if not resultado.empty:
-        # VI está em decimal, multiplicamos por 100 para %
-        vi = resultado['volImplicita'].iloc[0] * 100 
-        delta = resultado['delta'].iloc[0]
-        gamma = resultado['gamma'].iloc[0]
-        theta = resultado['theta'].iloc[0]
-        vega = resultado['vega'].iloc[0]
-        
-        return vi, delta, gamma, theta, vega
-    else:
-        # Retorna NaN para todas as métricas se não encontrar
-        return np.nan, np.nan, np.nan, np.nan, np.nan
+    if valor < 0:
+        return f"- R$ {resultado}"
+    return f"R$ {resultado}"
 
-# =========================================================================
-# 3. FUNÇÕES DE CÁLCULO DE MÉTRICAS (Específicas por tipo de Spread)
-# =========================================================================
-
-def calcular_bear_call_spread_metrics(strike_venda, premio_venda, strike_compra, premio_compra, quantidade, taxas):
-    """
-    Calcula as métricas do Bear Call Spread (Crédito).
-    Vende Strike MENOR, Compra Strike MAIOR.
-    """
-    # 1. Crédito Líquido por Unidade (Receita Inicial)
-    credito_liquido_unidade = premio_venda - premio_compra
+def buscar_metrics_do_csv(df_csv: pd.DataFrame, ticker_alvo: str, cotação_atual: float) -> dict:
+    """Busca métricas do ativo base e usa a cotação informada pelo usuário."""
+    # Como o usuário agora fornece o Ticker, usamos o Ticker para buscar as métricas
+    resultado = df_csv[df_csv['idAcao'] == ticker_alvo] 
     
-    if credito_liquido_unidade <= 0:
-        return -math.inf, 0, 0, 0 
-
-    # 2. Lucro Máximo (Max Profit) - Fluxo de Caixa Inicial (Prêmio Bruto - Taxas)
-    lucro_maximo_total = (credito_liquido_unidade * quantidade) - taxas
+    if resultado.empty:
+        # Tenta buscar pelo primeiro ticker de opção, se disponível, para obter o vencimento
+        resultado = df_csv[df_csv['ticker'].str.startswith(ticker_alvo)].head(1) 
     
-    # 3. Prejuízo Máximo (Max Loss) - Distância dos strikes menos o crédito
-    diferenca_strikes_unitario = (strike_compra - strike_venda) / FATOR_STRIKE_UNITARIO 
-    prejuizo_maximo_total = (diferenca_strikes_unitario - credito_liquido_unidade) * quantidade + taxas
-    
-    if lucro_maximo_total <= 0:
-         return -math.inf, 0, 0, 0 
+    if resultado.empty:
+        return {'preco_acao_base': cotação_atual, 'diasUteis': np.nan, 'vencimento': 'N/A'}
 
-    # 4. Ponto de Equilíbrio (Breakeven)
-    ponto_equilibrio = strike_venda + (credito_liquido_unidade * FATOR_STRIKE_UNITARIO)
-    
-    # 5. Relação Risco x Retorno (Lucro / Risco) - Métrica de Otimização
-    relacao_risco_retorno = lucro_maximo_total / prejuizo_maximo_total
-    
-    return relacao_risco_retorno, lucro_maximo_total, prejuizo_maximo_total, ponto_equilibrio
-
-
-def calcular_bear_put_spread_metrics(strike_compra, premio_compra, strike_venda, premio_venda, quantidade, taxas):
-    """
-    Calcula as métricas do Bear Put Spread (Débito).
-    Compra Strike MAIOR, Vende Strike MENOR.
-    """
-    # 1. Custo Líquido por Unidade (Débito Inicial)
-    custo_liquido_unidade = premio_compra - premio_venda
-    
-    if custo_liquido_unidade <= 0:
-        return -math.inf, 0, 0, 0 
-
-    # 2. Prejuízo Máximo (Max Loss) - Fluxo de Caixa Inicial (Custo Bruto + Taxas)
-    prejuizo_maximo_total = (custo_liquido_unidade * quantidade) + taxas
-    
-    # 3. Lucro Líquido Máximo Total
-    lucro_bruto_maximo_unidade = (strike_compra - strike_venda) / FATOR_STRIKE_UNITARIO 
-    lucro_maximo_total = (lucro_bruto_maximo_unidade - custo_liquido_unidade) * quantidade - taxas
-    
-    if lucro_maximo_total <= 0:
-         return -math.inf, 0, 0, 0 
-
-    # 4. Ponto de Equilíbrio (Breakeven)
-    ponto_equilibrio = strike_compra - (custo_liquido_unidade * FATOR_STRIKE_UNITARIO)
-    
-    # 5. Relação Risco x Retorno (Lucro / Risco) - Métrica de Otimização
-    relacao_risco_retorno = lucro_maximo_total / prejuizo_maximo_total
-    
-    return relacao_risco_retorno, lucro_maximo_total, prejuizo_maximo_total, ponto_equilibrio
-
-
-# =========================================================================
-# 4. FUNÇÕES DE OTIMIZAÇÃO (DB Scan)
-# =========================================================================
-
-def encontrar_melhor_bear_call_spread(df_opcoes, ativo_base, cotação_atual, quantidade, taxas):
-    """
-    Analisa o CSV e encontra o Bear Call Spread com a melhor relação Risco x Retorno.
-    """
-    calls_validas = df_opcoes[
-        (df_opcoes['idAcao'] == ativo_base) & 
-        (df_opcoes['tipo'] == 'CALL') &
-        (df_opcoes['premioPct'] > 0.0)
-    ].copy()
-    
-    if calls_validas.empty:
-        return None, "Nenhuma opção CALL válida encontrada para o ativo."
-
-    calls_validas.sort_values(by='strike', inplace=True)
-    
-    melhor_relacao = -math.inf
-    melhor_spread = None
-    
-    for i in range(len(calls_validas)):
-        call_venda = calls_validas.iloc[i] # Opção para ser vendida (Strike MENOR)
-        
-        for j in range(len(calls_validas)):
-            if i == j: 
-                continue
-            
-            call_compra = calls_validas.iloc[j] # Opção para ser comprada (Strike MAIOR)
-
-            # Regra Fundamental: Vende Strike MENOR, Compra Strike MAIOR
-            if call_venda['strike'] < call_compra['strike']:
-                
-                # O prêmio já está na escala R$ por unidade
-                premio_venda_R = call_venda['premioPct']
-                premio_compra_R = call_compra['premioPct'] 
-                
-                relacao, lucro_max, prejuizo_max, ponto_equilibrio = calcular_bear_call_spread_metrics(
-                    call_venda['strike'], premio_venda_R, 
-                    call_compra['strike'], premio_compra_R, 
-                    quantidade, taxas
-                )
-                
-                if relacao > melhor_relacao:
-                    melhor_relacao = relacao
-                    
-                    # Extração de todas as métricas, incluindo Gregas
-                    vi_venda, delta_v, gamma_v, theta_v, vega_v = buscar_metrics_do_csv(df_opcoes, ativo_base, call_venda['strike'], 'CALL')
-                    vi_compra, delta_c, gamma_c, theta_c, vega_c = buscar_metrics_do_csv(df_opcoes, ativo_base, call_compra['strike'], 'CALL')
-                    
-                    melhor_spread = {
-                        "tipo_operacao": "Bear Call Spread (Crédito)",
-                        "ativo_base": ativo_base,
-                        "cotação_atual": cotação_atual,
-                        "strike_venda": call_venda['strike'],
-                        "premio_venda": premio_venda_R,
-                        "ticker_venda": call_venda['ticker'],
-                        "strike_compra": call_compra['strike'],
-                        "premio_compra": premio_compra_R,
-                        "ticker_compra": call_compra['ticker'],
-                        "premio_liquido_unidade": premio_venda_R - premio_compra_R,
-                        "lucro_maximo_total": lucro_max, # É o Crédito Líquido Total (Prêmio Bruto - Taxas)
-                        "prejuizo_maximo_total": prejuizo_max,
-                        "ponto_equilibrio": ponto_equilibrio,
-                        "relacao_risco_retorno": relacao,
-                        "vi_venda": vi_venda,
-                        "vi_compra": vi_compra,
-                        
-                        # Armazenamento das Gregas
-                        "delta_venda": delta_v, "gamma_venda": gamma_v, "theta_venda": theta_v, "vega_venda": vega_v,
-                        "delta_compra": delta_c, "gamma_compra": gamma_c, "theta_compra": theta_c, "vega_compra": vega_c,
-                        
-                        # Gregas Líquidas (Net Greeks)
-                        "net_delta": delta_v - delta_c,    # Short Call Delta - Long Call Delta
-                        "net_gamma": gamma_v - gamma_c,    # Short Gamma - Long Gamma
-                        "net_theta": theta_v - theta_c,    # Short Theta - Long Theta
-                        "net_vega": vega_v - vega_c,      # Short Vega - Long Vega
-                    }
-                    
-    if melhor_spread:
-        return melhor_spread, "OK"
-    else:
-        return None, "Nenhuma combinação de Bear Call Spread válida e lucrativa foi encontrada no mercado simulado (CSV)."
-
-
-def encontrar_melhor_bear_put_spread(df_opcoes, ativo_base, cotação_atual, quantidade, taxas):
-    """
-    Analisa o CSV e encontra o Bear Put Spread com a melhor relação Risco x Retorno.
-    """
-    puts_validas = df_opcoes[
-        (df_opcoes['idAcao'] == ativo_base) & 
-        (df_opcoes['tipo'] == 'PUT') &
-        (df_opcoes['premioPct'] > 0.0)
-    ].copy()
-    
-    if puts_validas.empty:
-        return None, "Nenhuma opção PUT válida encontrada para o ativo."
-
-    puts_validas.sort_values(by='strike', inplace=True)
-    
-    melhor_relacao = -math.inf
-    melhor_spread = None
-    
-    for i in range(len(puts_validas)):
-        put_compra = puts_validas.iloc[i] # Opção para ser comprada (Strike MAIOR)
-        
-        for j in range(len(puts_validas)):
-            if i == j: 
-                continue
-            
-            put_venda = puts_validas.iloc[j] # Opção para ser vendida (Strike MENOR)
-
-            # Regra Fundamental: Compra Strike MAIOR, Vende Strike MENOR
-            if put_compra['strike'] > put_venda['strike']:
-                
-                # O prêmio já está na escala R$ por unidade
-                premio_compra_R = put_compra['premioPct']
-                premio_venda_R = put_venda['premioPct']
-                
-                relacao, lucro_max, prejuizo_max, ponto_equilibrio = calcular_bear_put_spread_metrics(
-                    put_compra['strike'], premio_compra_R, 
-                    put_venda['strike'], premio_venda_R, 
-                    quantidade, taxas
-                )
-                
-                if relacao > melhor_relacao:
-                    melhor_relacao = relacao
-                    
-                    # Extração de todas as métricas, incluindo Gregas
-                    vi_compra, delta_c, gamma_c, theta_c, vega_c = buscar_metrics_do_csv(df_opcoes, ativo_base, put_compra['strike'], 'PUT')
-                    vi_venda, delta_v, gamma_v, theta_v, vega_v = buscar_metrics_do_csv(df_opcoes, ativo_base, put_venda['strike'], 'PUT')
-                    
-                    melhor_spread = {
-                        "tipo_operacao": "Bear Put Spread (Débito)",
-                        "ativo_base": ativo_base,
-                        "cotação_atual": cotação_atual,
-                        "strike_compra": put_compra['strike'],
-                        "premio_compra": premio_compra_R,
-                        "ticker_compra": put_compra['ticker'],
-                        "strike_venda": put_venda['strike'],
-                        "premio_venda": premio_venda_R,
-                        "ticker_venda": put_venda['ticker'],
-                        "custo_liquido_unidade": premio_compra_R - premio_venda_R,
-                        "lucro_maximo_total": lucro_max,
-                        "prejuizo_maximo_total": prejuizo_max, # É o Débito Líquido Total (Custo Bruto + Taxas)
-                        "ponto_equilibrio": ponto_equilibrio,
-                        "relacao_risco_retorno": relacao,
-                        "vi_compra": vi_compra,
-                        "vi_venda": vi_venda,
-
-                        # Armazenamento das Gregas
-                        "delta_compra": delta_c, "gamma_compra": gamma_c, "theta_compra": theta_c, "vega_compra": vega_c,
-                        "delta_venda": delta_v, "gamma_venda": gamma_v, "theta_venda": theta_v, "vega_venda": vega_v,
-                        
-                        # Gregas Líquidas (Net Greeks)
-                        "net_delta": delta_c - delta_v,    # Long Put Delta - Short Put Delta
-                        "net_gamma": gamma_c - gamma_v,    # Long Gamma - Short Gamma
-                        "net_theta": theta_c - theta_v,    # Long Theta - Short Theta
-                        "net_vega": vega_c - vega_v,      # Long Vega - Short Vega
-                    }
-                    
-    if melhor_spread:
-        return melhor_spread, "OK"
-    else:
-        return None, "Nenhuma combinação de Bear Put Spread válida e lucrativa foi encontrada no mercado simulado (CSV)."
-
-
-# =========================================================================
-# 5. EXECUÇÃO DA SIMULAÇÃO
-# =========================================================================
-def executar_simulacao():
+    preco_acao_base = cotação_atual
     
     try:
-        if not os.path.exists('opcoes_excel_tratado.csv'):
-            # Se o arquivo não existir, criamos um DataFrame simulado com seus dados
-            print("AVISO: Arquivo 'opcoes_final_tratado.csv' não encontrado. Usando dados SIMULADOS fornecidos pelo usuário.")
-            data = {
-                'idAcao': ['BOVA11', 'BOVA11', 'BOVA11', 'BOVA11', 'BOVA11', 'BOVA11', 'BOVA11'],
-                'ticker': ['BOVAW124W1', 'BOVAK137W1', 'BOVAK149W1', 'BOVAW147W1', 'BOVAW141W1', 'BOVAK144W1', 'BOVAK143W1'],
-                'tipo': ['PUT', 'CALL', 'CALL', 'PUT', 'PUT', 'CALL', 'CALL'],
-                'strike': [124.0, 137.0, 149.0, 147.0, 141.0, 144.0, 143.0],
-                'premioPct': [0.06, 5.81, 0.46, 5.38, 1.57, 1.67, 2.13],
-                'volImplicita': [0.2177, 0.1156, 0.1363, 0.1581, 0.1346, 0.1272, 0.1314],
-                'delta': [-1.72, 87.15, 15.25, -71.93, -37.76, 42.29, 48.7],
-                'gamma': [0.45, 4.19, 3.99, 4.91, 6.5, 7.09, 6.99],
-                'theta': [-0.69, -9.14, -4.15, 1.52, -1.37, -7.95, -8.69],
-                'vega': [185.04, 910.15, 1022.46, 1463.47, 1650.01, 1700.66, 1730.96]
-            }
-            df_opcoes = pd.DataFrame(data)
-        else:
-            df_opcoes = pd.read_csv('opcoes_final_para_mysql.csv')
-        
-        df_opcoes['strike'] = pd.to_numeric(df_opcoes['strike'], errors='coerce')
+        # Garante que, se a primeira linha tiver NaN, o resultado não será usado no retorno
+        dias_uteis = resultado['diasUteis'].iloc[0] if 'diasUteis' in resultado.columns and not resultado.empty else np.nan
+        vencimento = resultado['vencimento'].iloc[0] if 'vencimento' in resultado.columns and not resultado.empty else 'N/A'
+    except Exception:
+        dias_uteis = np.nan
+        vencimento = 'N/A'
 
-        # === Solicita Ticker e Preço ao Usuário ===
-        print("\n--- OTIMIZADOR DE SPREADS DE BAIXA ---")
-        
-        ativo_base = input("Digite o Ticker do ativo (Ex: BOVA11): ").strip().upper() or 'BOVA11'
-        
-        cotação_atual = 0.0
-        while True:
-            try:
-                # Permite vírgula ou ponto como separador decimal para a cotação
-                preco_input = input("Digite o Valor Atual do ativo (Ex: 120,50): ").strip().replace(',', '.')
-                cotação_atual = float(preco_input) if preco_input else 120.50
-                break
-            except ValueError:
-                print("Entrada inválida. Por favor, digite um número (Ex: 120.50).")
-        
-        # === Solicita Dias para Vencimento ===
-        dias_vencimento = 0
-        while True:
-            try:
-                dias_input = input("Digite o número de dias até o vencimento das opções (Ex: 23): ").strip()
-                # Usamos 23 como um valor razoável se o usuário deixar vazio
-                dias_vencimento = int(dias_input) if dias_input else 23 
-                break
-            except ValueError:
-                print("Entrada inválida. Por favor, digite um número inteiro.")
-        
-        # === Seleção da Operação ===
-        print("\n--- Seleção da Otimização ---")
-        while True:
-            TIPO_OPERACAO = input("Qual Spread deseja otimizar? (1: BEAR CALL - Crédito, 2: BEAR PUT - Débito): ").strip()
-            if TIPO_OPERACAO in ['1', '2']:
-                break
-            print("Opção inválida. Digite 1 para BEAR CALL ou 2 para BEAR PUT.")
-        
-        print("---------------------------------\n")
+    return {
+        'preco_acao_base': preco_acao_base,
+        # Nota: O 'diasUteis' aqui será o primeiro valor após o recálculo na main()
+        'diasUteis': dias_uteis, 
+        'vencimento': vencimento,
+    }
 
-        # 1. Executa a Otimização
-        if TIPO_OPERACAO == '1':
-            melhor_resultado, status = encontrar_melhor_bear_call_spread(
-                df_opcoes, ativo_base, cotação_atual, 
-                QUANTIDADE_CONTRATOS, TAXAS_TOTAIS_OPERACAO
-            )
-            natureza = "CRÉDITO (Embolsando Prêmios)"
-        else: # TIPO_OPERACAO == '2'
-            melhor_resultado, status = encontrar_melhor_bear_put_spread(
-                df_opcoes, ativo_base, cotação_atual, 
-                QUANTIDADE_CONTRATOS, TAXAS_TOTAIS_OPERACAO
-            )
-            natureza = "DÉBITO (Desembolsando Custo)"
-
-        # 2. Apresentação do Resultado
-        print("=" * 60)
-        print(f"RELATÓRIO DE OTIMIZAÇÃO: {melhor_resultado['tipo_operacao'].upper() if melhor_resultado else 'N/A'}")
-        print("=" * 60)
+def calcular_net_gregas(res: pd.Series, grega: str, is_credito: bool) -> float:
+    """
+    Calcula a Net Grega (diferença entre a grega da perna Comprada e Vendida).
+    """
+    col_venda = f'{grega}_venda'
+    col_compra = f'{grega}_compra'
+    
+    if col_venda not in res or col_compra not in res:
+        return np.nan
         
-        if melhor_resultado:
-            res = melhor_resultado
+    grega_venda = np.nan_to_num(res[col_venda])
+    grega_compra = np.nan_to_num(res[col_compra])
+    
+    if is_credito:
+        # Bear Call (Vende strike baixo) ou Bull Put (Vende strike alto)
+        return grega_venda - grega_compra
+    else:
+        # Bull Call (Compra strike baixo) ou Bear Put (Compra strike alto)
+        return grega_compra - grega_venda
+
+# =========================================================================
+# 3. LÓGICA DE CÁLCULO DE SPREAD
+# =========================================================================
+
+def calcular_spreads(df_opcoes: pd.DataFrame, metrics: dict, tipo_operacao_filtro: str):
+    """
+    Identifica e calcula os Spreads, filtrando pelo tipo_operacao_filtro.
+    """
+    
+    # Mapeamento do filtro de entrada para os tipos de spread:
+    filtro_tipo_opcao = []
+    
+    if tipo_operacao_filtro in ['1', '3']:
+        filtro_tipo_opcao.append('CALL')
+    elif tipo_operacao_filtro in ['2', '4']:
+        filtro_tipo_opcao.append('PUT')
+    elif tipo_operacao_filtro == '0':
+        filtro_tipo_opcao = ['CALL', 'PUT']
+    else:
+        return pd.DataFrame() 
+
+    resultados_spread = []
+    
+    colunas_agrupamento = ['idAcao', 'tipo']
+    if 'vencimento' in df_opcoes.columns:
+        colunas_agrupamento.append('vencimento')
+        
+    print(f"\nAgrupando por: {colunas_agrupamento}")
+
+    grega_cols = ['delta', 'gamma', 'theta', 'vega', 'volImplicita']
+    
+    # NOVO: Verifica se a coluna 'premio' existe no DataFrame
+    usa_premio_direto = 'premio' in df_opcoes.columns 
+
+    for chave, grupo in df_opcoes.groupby(colunas_agrupamento):
+        
+        id_ativo = chave[0]
+        tipo = chave[1]
+        vencimento = chave[-1] if 'vencimento' in colunas_agrupamento else 'N/A'
+        
+        if tipo not in filtro_tipo_opcao:
+            continue
             
-            # --- CÁLCULO DE VALORES DE EXIBIÇÃO ---
-            strike_venda_unit = res['strike_venda'] / FATOR_STRIKE_UNITARIO
-            strike_compra_unit = res['strike_compra'] / FATOR_STRIKE_UNITARIO
-            
-            # Cálculo Nocional: Strike * Quantidade de Contratos
-            valor_nocional_venda = strike_venda_unit * QUANTIDADE_CONTRATOS
-            valor_nocional_compra = strike_compra_unit * QUANTIDADE_CONTRATOS
-            ponto_equilibrio_unit = res['ponto_equilibrio'] / FATOR_STRIKE_UNITARIO
+        # ---------------------------------------------------------------------
+        # SPREADS COM CALL (Filtro para 1 e 3)
+        # ---------------------------------------------------------------------
+        
+        if tipo == 'CALL':
+            grupo_calls = grupo.sort_values(by='strike', ascending=True)
 
-            print(f"STATUS: {status}")
-            print(f"Ativo: {res['ativo_base']} | Cotação Atual: R$ {formatar_moeda_br(res['cotação_atual'])}")
-            print(f"Vencimento: {dias_vencimento} dias")
-            print(f"Lotes de {QUANTIDADE_CONTRATOS} Contratos | Taxas Totais: R$ {formatar_moeda_br(TAXAS_TOTAIS_OPERACAO)}")
-            print(f"Natureza da Operação: {natureza}")
-            print("-" * 60)
-            
-            # --- Exibição das Pernas ---
-            if TIPO_OPERACAO == '1':
-                # Bear Call Spread (Crédito)
-                print(f"VENDA (Strike Menor): {res['ticker_venda']} (Strike/Unidade: R$ {formatar_moeda_br(strike_venda_unit)} | Prêmio: R$ {formatar_moeda_br(res['premio_venda'])} | Valor Nocional Total: R$ {formatar_moeda_br(valor_nocional_venda)})")
-                print(f"COMPRA (Strike Maior): {res['ticker_compra']} (Strike/Unidade: R$ {formatar_moeda_br(strike_compra_unit)} | Prêmio: R$ {formatar_moeda_br(res['premio_compra'])} | Valor Nocional Total: R$ {formatar_moeda_br(valor_nocional_compra)})")
-                print("-" * 60)
-                
-                premio_bruto_unitario = res['premio_liquido_unidade']
-                fluxo_bruto_total = premio_bruto_unitario * QUANTIDADE_CONTRATOS
-                
-                print(f"PRÊMIO LÍQUIDO por unidade: R$ {formatar_moeda_br(premio_bruto_unitario)}")
-                print(f"FLUXO DE CAIXA INICIAL (CRÉDITO BRUTO TOTAL): R$ {formatar_moeda_br(fluxo_bruto_total)}")
-                print(f"TAXAS: R$ {formatar_moeda_br(TAXAS_TOTAIS_OPERACAO)}")
-                
-                print("-" * 60)
-                print(f"PONTO DE EQUILÍBRIO (Breakeven): R$ {formatar_moeda_br(ponto_equilibrio_unit)} (Por Unidade)")
-                
-                # LUCRO MÁXIMO (Fluxo de Caixa Líquido)
-                print(f"LUCRO MÁXIMO TOTAL (CRÉDITO LÍQUIDO APÓS TAXAS): R$ {formatar_moeda_br(res['lucro_maximo_total'])}")
-                print(f"PREJUÍZO MÁXIMO TOTAL: R$ {formatar_moeda_br(res['prejuizo_maximo_total'])}")
+            for i in range(len(grupo_calls)):
+                for j in range(i + 1, len(grupo_calls)):
+                    op_strike_baixo = grupo_calls.iloc[i] 
+                    op_strike_alto = grupo_calls.iloc[j]
+                    
+                    K_baixo = op_strike_baixo['strike']
+                    K_alto = op_strike_alto['strike']
+                    
+                    # === BLOCO CORRIGIDO PARA EVITAR KEYERROR: 'premio' ===
+                    if usa_premio_direto:
+                        # Usa a coluna 'premio' (R$ direto)
+                        premio_baixo_R = np.nan_to_num(op_strike_baixo['premio']) 
+                        premio_alto_R = np.nan_to_num(op_strike_alto['premio'])
+                    else:
+                        # Usa a coluna 'premioPct' (Cálculo original: Strike * Pct)
+                        premio_baixo_R = np.nan_to_num(K_baixo * op_strike_baixo['premioPct'] / 100.0)
+                        premio_alto_R = np.nan_to_num(K_alto * op_strike_alto['premioPct'] / 100.0)
+                    # =======================================================
+                    
+                    ganho_max_strike = K_alto - K_baixo
+                    
+                    # === 1. Bull Call Spread (DÉBITO) - Compra K_baixo, Vende K_alto ===
+                    if tipo_operacao_filtro in ['0', '3']:
+                        compra = op_strike_baixo; venda = op_strike_alto
+                        premio_liquido = premio_alto_R - premio_baixo_R # Débito (negativo)
+                        risco_max = abs(premio_liquido) # Custo inicial
+                        retorno_max_pct = (ganho_max_strike + premio_liquido) / max(0.01, risco_max)
+                        
+                        resultado_debito = {
+                            'ativo': id_ativo, 'vencimento': vencimento, 
+                            'diasUteis': compra['diasUteis'], # <--- CORREÇÃO APLICADA
+                            'tipo_spread': 'Bull Call Spread (Débito)',
+                            'strike_compra': K_baixo, 'ticker_compra': compra['ticker'],
+                            'strike_venda': K_alto, 'ticker_venda': venda['ticker'],
+                            'premio_compra_R$': premio_baixo_R, 'premio_venda_R$': premio_alto_R,
+                            'premio_liquido_R$': premio_liquido, 'ganho_max_R$': ganho_max_strike,
+                            'risco_max_R$': risco_max, 'retorno_max_pct': retorno_max_pct,
+                        }
+                        for col in grega_cols:
+                            resultado_debito[f'{col}_compra'] = compra[col] if col in grupo.columns else np.nan
+                            resultado_debito[f'{col}_venda'] = venda[col] if col in grupo.columns else np.nan
+                        resultados_spread.append(resultado_debito)
 
+                    
+                    # === 2. Bear Call Spread (CRÉDITO) - Vende K_baixo, Compra K_alto ===
+                    if tipo_operacao_filtro in ['0', '1']:
+                        venda = op_strike_baixo; compra = op_strike_alto
+                        premio_liquido = premio_baixo_R - premio_alto_R # Crédito (positivo)
+                        risco_max = ganho_max_strike - premio_liquido
+                        risco_ajustado = max(0.01, risco_max)
+                        retorno_max_pct = premio_liquido / risco_ajustado
+
+                        resultado_credito = {
+                            'ativo': id_ativo, 'vencimento': vencimento, 
+                            'diasUteis': venda['diasUteis'], # <--- CORREÇÃO APLICADA
+                            'tipo_spread': 'Bear Call Spread (Crédito)',
+                            'strike_compra': K_alto, 'ticker_compra': compra['ticker'],
+                            'strike_venda': K_baixo, 'ticker_venda': venda['ticker'],
+                            'premio_compra_R$': premio_alto_R, 'premio_venda_R$': premio_baixo_R,
+                            'premio_liquido_R$': premio_liquido, 'ganho_max_R$': premio_liquido,
+                            'risco_max_R$': risco_max, 'retorno_max_pct': retorno_max_pct,
+                        }
+                        for col in grega_cols:
+                            resultado_credito[f'{col}_compra'] = compra[col] if col in grupo.columns else np.nan
+                            resultado_credito[f'{col}_venda'] = venda[col] if col in grupo.columns else np.nan
+                        resultados_spread.append(resultado_credito)
+
+            
+        # ---------------------------------------------------------------------
+        # SPREADS COM PUT (Filtro para 2 e 4)
+        # ---------------------------------------------------------------------
+        
+        elif tipo == 'PUT':
+            grupo_puts = grupo.sort_values(by='strike', ascending=True)
+
+            for i in range(len(grupo_puts)):
+                for j in range(i + 1, len(grupo_puts)):
+                    op_strike_baixo = grupo_puts.iloc[i] 
+                    op_strike_alto = grupo_puts.iloc[j]
+                    
+                    K_baixo = op_strike_baixo['strike']
+                    K_alto = op_strike_alto['strike']
+                    
+                    # === BLOCO CORRIGIDO PARA EVITAR KEYERROR: 'premio' ===
+                    if usa_premio_direto:
+                        # Usa a coluna 'premio' (R$ direto)
+                        premio_baixo_R = np.nan_to_num(op_strike_baixo['premio']) 
+                        premio_alto_R = np.nan_to_num(op_strike_alto['premio'])
+                    else:
+                        # Usa a coluna 'premioPct' (Cálculo original: Strike * Pct)
+                        premio_baixo_R = np.nan_to_num(K_baixo * op_strike_baixo['premioPct'] / 100.0)
+                        premio_alto_R = np.nan_to_num(K_alto * op_strike_alto['premioPct'] / 100.0)
+                    # =======================================================
+
+                    ganho_max_strike = K_alto - K_baixo
+                    
+                    # === 3. Bull Put Spread (CRÉDITO) - Vende K_alto, Compra K_baixo ===
+                    if tipo_operacao_filtro in ['0', '4']:
+                        venda = op_strike_alto; compra = op_strike_baixo
+                        premio_liquido = premio_alto_R - premio_baixo_R # Crédito (positivo)
+                        risco_max = ganho_max_strike - premio_liquido
+                        risco_ajustado = max(0.01, risco_max)
+                        retorno_max_pct = premio_liquido / risco_ajustado
+
+                        resultado_credito = {
+                            'ativo': id_ativo, 'vencimento': vencimento, 
+                            'diasUteis': venda['diasUteis'], # <--- CORREÇÃO APLICADA
+                            'tipo_spread': 'Bull Put Spread (Crédito)', 
+                            'strike_compra': K_baixo, 'ticker_compra': compra['ticker'],
+                            'strike_venda': K_alto, 'ticker_venda': venda['ticker'],
+                            'premio_compra_R$': premio_baixo_R, 'premio_venda_R$': premio_alto_R,
+                            'premio_liquido_R$': premio_liquido, 'ganho_max_R$': premio_liquido,
+                            'risco_max_R$': risco_max, 'retorno_max_pct': retorno_max_pct,
+                        }
+                        for col in grega_cols:
+                            resultado_credito[f'{col}_compra'] = compra[col] if col in grupo.columns else np.nan
+                            resultado_credito[f'{col}_venda'] = venda[col] if col in grupo.columns else np.nan
+                        resultados_spread.append(resultado_credito)
+
+                    
+                    # === 4. Bear Put Spread (DÉBITO) - Compra K_alto, Vende K_baixo ===
+                    if tipo_operacao_filtro in ['0', '2']:
+                        compra = op_strike_alto; venda = op_strike_baixo
+                        premio_liquido = premio_baixo_R - premio_alto_R # Débito (negativo)
+                        risco_max = abs(premio_liquido) # Custo inicial
+                        retorno_max_pct = (ganho_max_strike + premio_liquido) / max(0.01, risco_max)
+
+                        resultado_debito = {
+                            'ativo': id_ativo, 'vencimento': vencimento, 
+                            'diasUteis': compra['diasUteis'], # <--- CORREÇÃO APLICADA
+                            'tipo_spread': 'Bear Put Spread (Débito)',
+                            'strike_compra': K_alto, 'ticker_compra': compra['ticker'],
+                            'strike_venda': K_baixo, 'ticker_venda': venda['ticker'],
+                            'premio_compra_R$': premio_alto_R, 'premio_venda_R$': premio_baixo_R,
+                            'premio_liquido_R$': premio_liquido, 'ganho_max_R$': ganho_max_strike,
+                            'risco_max_R$': risco_max, 'retorno_max_pct': retorno_max_pct,
+                        }
+                        for col in grega_cols:
+                            resultado_debito[f'{col}_compra'] = compra[col] if col in grupo.columns else np.nan
+                            resultado_debito[f'{col}_venda'] = venda[col] if col in grupo.columns else np.nan
+                        resultados_spread.append(resultado_debito)
+
+    return pd.DataFrame(resultados_spread)
+
+# =========================================================================
+# 4. FUNÇÃO DE RELATÓRIO DETALHADO (Ajustada com Valor Nocional)
+# =========================================================================
+
+def imprimir_relatorio_detalhado(res: pd.Series, cotação_atual: float):
+    """
+    Imprime um relatório detalhado para o melhor spread encontrado, incluindo o Valor Nocional.
+    """
+    print("=" * 75)
+    print(f"RELATÓRIO DE OTIMIZAÇÃO: {res['tipo_spread'].upper()}")
+    print("=" * 75)
+    
+    # --- CÁLCULO DE VALORES TOTAIS E LÍQUIDOS ---
+    
+    premio_liquido_unit = res['premio_liquido_R$'] 
+    premio_bruto_total = premio_liquido_unit * QUANTIDADE_CONTRATOS
+    
+    # Valores unitários limpos (para evitar NaN no cálculo do Ponto de Equilíbrio)
+    strike_compra_limpo = np.nan_to_num(res['strike_compra'])
+    strike_venda_limpo = np.nan_to_num(res['strike_venda'])
+    premio_liquido_unit_limpo = np.nan_to_num(premio_liquido_unit)
+    
+    is_credito = premio_liquido_unit >= 0
+    
+    if is_credito: # Spread de CRÉDITO (Embolsando Prêmio, positivo ou zero)
+        natureza = "CRÉDITO (Embolsando Prêmio)"
+        lucro_maximo_total = premio_bruto_total - TAXAS_TOTAIS_OPERACAO
+        
+        risco_maximo_total_teorico = res['risco_max_R$'] * QUANTIDADE_CONTRATOS
+        risco_maximo_total_liquido = risco_maximo_total_teorico + TAXAS_TOTAIS_OPERACAO
+        
+        # Ponto de Equilíbrio (Crédito): O preço do ativo tem que estar "fora" da perna vendida.
+        if 'Put' in res['tipo_spread']: # Bull Put Spread (Vende PUT Strike Alto)
+            # PE = Strike Venda - Prêmio Líquido
+            ponto_equilibrio = strike_venda_limpo - premio_liquido_unit_limpo
+        else: # Bear Call Spread (Vende CALL Strike Baixo)
+            # PE = Strike Venda + Prêmio Líquido
+            ponto_equilibrio = strike_venda_limpo + premio_liquido_unit_limpo
+            
+        fluxo_inicial = "CRÉDITO BRUTO TOTAL"
+        lucro_label = "LUCRO MÁXIMO TOTAL (CRÉDITO LÍQUIDO APÓS TAXAS)"
+        risco_label = "PREJUÍZO MÁXIMO TOTAL"
+
+    else: # Spread de DÉBITO (Desembolsando Custo, negativo)
+        natureza = "DÉBITO (Desembolsando Custo)"
+        
+        ganho_max_strike_total = res['ganho_max_R$'] * QUANTIDADE_CONTRATOS
+        lucro_maximo_total = ganho_max_strike_total + premio_bruto_total - TAXAS_TOTAIS_OPERACAO
+        
+        risco_maximo_total_teorico = abs(premio_bruto_total)
+        risco_maximo_total_liquido = risco_maximo_total_teorico + TAXAS_TOTAIS_OPERACAO
+        
+        # Ponto de Equilíbrio (Débito): O preço do ativo tem que estar "além" da perna comprada.
+        if 'Call' in res['tipo_spread']: # Bull Call Spread (Compra CALL Strike Baixo)
+            # PE = Strike Compra + Custo Líquido (Abs Prêmio Líquido)
+            ponto_equilibrio = strike_compra_limpo + abs(premio_liquido_unit_limpo)
+        else: # Bear Put Spread (Compra PUT Strike Alto)
+            # PE = Strike Compra - Custo Líquido (Abs Prêmio Líquido)
+            ponto_equilibrio = strike_compra_limpo - abs(premio_liquido_unit_limpo)
+
+        fluxo_inicial = "CUSTO BRUTO TOTAL"
+        lucro_label = "LUCRO MÁXIMO TOTAL"
+        risco_label = "PREJUÍZO MÁXIMO TOTAL (DÉBITO LÍQUIDO APÓS TAXAS)"
+        
+    # --- CÁLCULO DO VALOR NOCIONAL (ADICIONADO AQUI) ---
+    diferenca_strike = abs(res['strike_venda'] - res['strike_compra'])
+    valor_nocional_total = diferenca_strike * QUANTIDADE_CONTRATOS 
+    # -------------------------------------------------------------------
+    
+    # --- INFORMAÇÕES GERAIS ---
+    print(f"Ativo Base: {res['ativo']} | Cotação Atual: {formatar_moeda_br(cotação_atual)}")
+    
+    # DIAS ÚTEIS VEM DIRETAMENTE DO SPREAD VENCEDOR (Corrigido na função calcular_spreads)
+    dias_uteis_limpos = int(np.nan_to_num(res['diasUteis'])) 
+    print(f"Vencimento: {res['vencimento']} ({dias_uteis_limpos} dias)")
+    
+    print(f"Lotes de {QUANTIDADE_CONTRATOS} Contratos | Taxas Totais: {formatar_moeda_br(TAXAS_TOTAIS_OPERACAO)}")
+    print(f"Natureza: {natureza}")
+    print("-" * 75)
+    
+    # --- PERNAS DA OPERAÇÃO (Usa Ticker Compra/Venda, que já estão corretos) ---
+    print(f"VENDA: {res['ticker_venda']} (Strike: {formatar_moeda_br(res['strike_venda'])} | Prêmio Unitário: {formatar_moeda_br(res['premio_venda_R$'])})")
+    print(f"COMPRA: {res['ticker_compra']} (Strike: {formatar_moeda_br(res['strike_compra'])} | Prêmio Unitário: {formatar_moeda_br(res['premio_compra_R$'])})")
+
+    print("-" * 75)
+    
+    # --- FLUXO DE CAIXA E RETORNO ---
+    print(f"PRÊMIO/CUSTO LÍQUIDO por unidade: {formatar_moeda_br(premio_liquido_unit)}")
+    print(f"FLUXO DE CAIXA INICIAL ({fluxo_inicial}): {formatar_moeda_br(premio_bruto_total)}")
+    print(f"TAXAS: {formatar_moeda_br(TAXAS_TOTAIS_OPERACAO)}")
+    print("-" * 75)
+    
+    print(f"PONTO DE EQUILÍBRIO (Breakeven): {formatar_moeda_br(ponto_equilibrio)} (Por Unidade)")
+    
+    # --- APRESENTAÇÃO DO VALOR NOCIONAL (ADICIONADO AQUI) ---
+    print("-" * 75)
+    print(f"VALOR NOCIONAL TOTAL (Exposição Máx.): {formatar_moeda_br(valor_nocional_total)}")
+    print("-" * 75)
+    
+    print(f"{lucro_label}: {formatar_moeda_br(lucro_maximo_total)}")
+    print(f"{risco_label}: {formatar_moeda_br(abs(risco_maximo_total_liquido))}")
+
+    # --- Retorno Máximo sobre Risco em FATOR ---
+    retorno_fator_unitario = res['retorno_max_pct']
+    
+    # RELAÇÃO RISCO/RETORNO LÍQUIDA
+    if abs(risco_maximo_total_liquido) > 0:
+        risco_retorno_liquido = lucro_maximo_total / abs(risco_maximo_total_liquido)
+    else:
+        risco_retorno_liquido = inf
+        
+    print(f"RELAÇÃO RISCO/RETORNO (LÍQUIDA, após taxas): {risco_retorno_liquido:.2f}")
+    print(f"RETORNO MÁXIMO SOBRE RISCO (TEÓRICO, unitário): {retorno_fator_unitario:.2f}") 
+    print("-" * 75)
+    
+    # --- ANÁLISE DE GREGAS (Se existirem) ---
+    
+    if all(col in res for col in ['delta_venda', 'delta_compra']) and not isnan(res['delta_venda']):
+        
+        # Uso da função refatorada
+        net_delta = calcular_net_gregas(res, 'delta', is_credito)
+        net_gamma = calcular_net_gregas(res, 'gamma', is_credito)
+        net_theta = calcular_net_gregas(res, 'theta', is_credito)
+        net_vega = calcular_net_gregas(res, 'vega', is_credito)
+
+        print("--- ANÁLISE DE GREGAS (UNITÁRIA) ---")
+        print(f"| Venda: Delta={res['delta_venda']:.2f}, Gamma={res['gamma_venda']:.2f}, Theta={res['theta_venda']:.2f}, Vega={res['vega_venda']:.2f}")
+        print(f"| Compra: Delta={res['delta_compra']:.2f}, Gamma={res['gamma_compra']:.2f}, Theta={res['theta_compra']:.2f}, Vega={res['vega_compra']:.2f}")
+        
+        print("\n--- POSIÇÃO LÍQUIDA DO SPREAD ---")
+        print(f"| NET DELTA: {net_delta:.2f}")
+        print(f"| NET GAMMA: {net_gamma:.2f}")
+        print(f"| NET THETA: {net_theta:.2f} (Ganho/Perda Diária Teórica)")
+        print(f"| NET VEGA: {net_vega:.2f}")
+
+        if 'volImplicita_venda' in res and not isnan(res['volImplicita_venda']):
+            print("-" * 75)
+            # Conversão para porcentagem * 100 para o formato mais comum (Ex: 30.50%)
+            vi_venda = np.nan_to_num(res['volImplicita_venda'])
+            vi_compra = np.nan_to_num(res['volImplicita_compra'])
+            print(f"VI VENDIDA: {vi_venda * 100:.2f}% | VI COMPRADA: {vi_compra * 100:.2f}%")
+        
+    print("=" * 75)
+
+# =========================================================================
+# 5. FUNÇÃO PRINCIPAL
+# =========================================================================
+
+def main():
+    """Função principal que carrega os dados e executa o cálculo do spread."""
+    # Defina a data de análise aqui (usando a data do seu contexto/output anterior)
+    DATA_ATUAL_STR = '14/10/2025' 
+    DATA_ATUAL = datetime.strptime(DATA_ATUAL_STR, '%d/%m/%Y')
+    
+    print(f"Iniciando o Cálculo de Spreads (V44 - Filtro de Qualidade e Fluxo Aprimorado). Data da Análise: {DATA_ATUAL_STR}")
+
+    # --- 1. Entrada do Ticker e Cotação Atual ---
+    print("\n--- PARÂMETROS DE MERCADO ---")
+    activo_base = input("Digite o Ticker do ativo (Ex: VALE3): ").strip().upper() or 'VALE3'
+    
+    cotação_actual = 0.0
+    while True:
+        try:
+            preco_input = input(f"Digite o Valor Atual de {activo_base} (Ex: 60,00): ").strip().replace(',', '.')
+            # Se o usuário apertar Enter, usamos um valor padrão (para fins de teste se necessário)
+            if not preco_input: 
+                cotação_actual = 60.00
             else:
-                # Bear Put Spread (Débito)
-                print(f"COMPRA (Strike Maior): {res['ticker_compra']} (Strike/Unidade: R$ {formatar_moeda_br(strike_compra_unit)} | Prêmio: R$ {formatar_moeda_br(res['premio_compra'])} | Valor Nocional Total: R$ {formatar_moeda_br(valor_nocional_compra)})")
-                print(f"VENDA (Strike Menor): {res['ticker_venda']} (Strike/Unidade: R$ {formatar_moeda_br(strike_venda_unit)} | Prêmio: R$ {formatar_moeda_br(res['premio_venda'])} | Valor Nocional Total: R$ {formatar_moeda_br(valor_nocional_venda)})")
-                print("-" * 60)
-
-                custo_bruto_unitario = res['custo_liquido_unidade']
-                fluxo_bruto_total = custo_bruto_unitario * QUANTIDADE_CONTRATOS
-
-                print(f"CUSTO LÍQUIDO por unidade: R$ {formatar_moeda_br(custo_bruto_unitario)}")
-                print(f"FLUXO DE CAIXA INICIAL (CUSTO BRUTO TOTAL): R$ {formatar_moeda_br(fluxo_bruto_total)}")
-                print(f"TAXAS: R$ {formatar_moeda_br(TAXAS_TOTAIS_OPERACAO)}")
-
-                print("-" * 60)
-                print(f"PONTO DE EQUILÍBRIO (Breakeven): R$ {formatar_moeda_br(ponto_equilibrio_unit)} (Por Unidade)")
-
-                print(f"LUCRO MÁXIMO TOTAL: R$ {formatar_moeda_br(res['lucro_maximo_total'])}")
-                # PREJUÍZO MÁXIMO (Fluxo de Caixa Líquido)
-                print(f"PREJUÍZO MÁXIMO TOTAL (DÉBITO LÍQUIDO APÓS TAXAS): R$ {formatar_moeda_br(res['prejuizo_maximo_total'])}")
-
-
-            print(f"RELAÇÃO RISCO/RETORNO (Lucro/Risco): {res['relacao_risco_retorno']:.2f}")
-            print("-" * 60)
+                cotação_actual = float(preco_input)
+                
+            if cotação_actual <= 0:
+                print("A cotação deve ser um valor positivo. Tente novamente.")
+                continue
+            break
+        except ValueError:
+            print("Entrada inválida. Por favor, digite um número (Ex: 60.00).")
+    
+    # --- 2. Entrada do Tipo de Operação ---
+    print("\n--- SELEÇÃO DO TIPO DE SPREAD ---")
+    tipo_input = None
+    tipo_map = {'1': 'Bear Call (Crédito)', '2': 'Bear Put (Débito)', 
+                '3': 'Bull Call (Débito)', '4': 'Bull Put (Crédito)', '0': 'TODOS'}
+    while tipo_input not in tipo_map:
+        print("Opções:")
+        print(" 1: Bear Call (Crédito) - Baixa")
+        print(" 2: Bear Put (Débito) - Baixa")
+        print(" 3: Bull Call (Débito) - Alta")
+        print(" 4: Bull Put (Crédito) - Alta")
+        tipo_input = input("Qual Spread deseja otimizar? (1, 2, 3, 4 ou 0 para TODOS): ").strip() or '0'
+        if tipo_input not in tipo_map:
+            print("Opção inválida. Tente novamente.")
             
-            # --- ANÁLISE DE GREGAS (UNITÁRIA) ---
-            
-            if TIPO_OPERACAO == '1': # BEAR CALL
-                ticker_v = res['ticker_venda']
-                ticker_c = res['ticker_compra']
-            else: # BEAR PUT
-                ticker_v = res['ticker_venda']
-                ticker_c = res['ticker_compra']
+    tipo_operacao_filtro = tipo_input
+    print(f"Filtro selecionado: {tipo_map[tipo_operacao_filtro]}")
+    print("---------------------------------------------------------------------------")
 
-            print("--- ANÁLISE DE GREGAS (UNITÁRIA) ---")
-            print(f"| {ticker_v} (Venda): Delta={res['delta_venda']:.2f}, Gamma={res['gamma_venda']:.2f}, Theta={res['theta_venda']:.2f}, Vega={res['vega_venda']:.2f}")
-            print(f"| {ticker_c} (Compra): Delta={res['delta_compra']:.2f}, Gamma={res['gamma_compra']:.2f}, Theta={res['theta_compra']:.2f}, Vega={res['vega_compra']:.2f}")
-            
-            print("\n--- POSIÇÃO LÍQUIDA DO SPREAD ---")
-            print(f"| NET DELTA: {res['net_delta']:.2f}")
-            print(f"| NET GAMMA: {res['net_gamma']:.2f}")
-            print(f"| NET THETA: {res['net_theta']:.2f} (Ganho/Perda Diária Teórica)")
-            print(f"| NET VEGA: {res['net_vega']:.2f}")
-
-            print("-" * 60)
-            print(f"VI VENDIDA (DB): {res['vi_venda']:.2f}% | VI COMPRADA (DB): {res['vi_compra']:.2f}%")
-        else:
-            print(f"STATUS: {status}")
-        
-        print("=" * 60)
-
-
+    try:
+        df_opcoes = pd.read_csv(NOME_ARQUIVO_CSV)
     except FileNotFoundError:
-        print(f"ERRO: Arquivo 'opcoes_final_para_mysql.csv' não encontrado e a simulação de dados falhou. Garanta que o arquivo CSV esteja presente.")
+        print(f"ERRO: Arquivo '{NOME_ARQUIVO_CSV}' não encontrado.")
+        print("Certifique-se de que o script 'limpar_excel_final.py' foi executado primeiro.")
+        return
     except Exception as e:
-        print(f"Ocorreu um erro na otimização do spread: {e}")
+        print(f"Ocorreu um erro ao carregar o CSV: {e}")
+        return
 
-if __name__ == "__main__":
-    executar_simulacao()
+    print(f"CSV carregado com {len(df_opcoes)} linhas.")
+
+    # ----------------------------------------------------------------------
+    # CORREÇÃO 1: RECALCULAR DIAS ÚTEIS (T-Dias)
+    # CORREÇÃO DO ERRO 'TypeError' do np.busday_count
+    # ----------------------------------------------------------------------
+    
+    # 1. Filtra o DataFrame apenas para o ativo que o usuário digitou
+    df_opcoes_filtrado = df_opcoes[df_opcoes['idAcao'] == activo_base].copy()
+    
+    if df_opcoes_filtrado.empty:
+        print(f"ERRO: Não foram encontradas opções para o ativo base '{activo_base}' no CSV.")
+        return
+
+    # 2. Converte a coluna 'vencimento' para o formato datetime
+    df_opcoes_filtrado['vencimento'] = pd.to_datetime(df_opcoes_filtrado['vencimento'], errors='coerce')
+
+    # 3. Prepara as datas no formato numpy.datetime64[D] (CORREÇÃO DE TIPO)
+    
+    # Data de Início (A data atual é uma única data para todas as linhas)
+    data_inicio_np = np.array([DATA_ATUAL.strftime('%Y-%m-%d')], dtype='datetime64[D]')
+    
+    # Datas Finais (Os vencimentos da coluna)
+    data_fim_np = df_opcoes_filtrado['vencimento'].values.astype('datetime64[D]')
+
+    # 4. Recalcula os dias úteis entre a DATA_ATUAL e o VENCIMENTO
+    df_opcoes_filtrado['diasUteis'] = np.busday_count(
+        data_inicio_np, 
+        data_fim_np
+    )
+    
+    # 5. Garante que é um número inteiro
+    df_opcoes_filtrado['diasUteis'] = df_opcoes_filtrado['diasUteis'].astype(int)
+
+    # ----------------------------------------------------------------------
+    # FIM DA CORREÇÃO 1
+    # ----------------------------------------------------------------------
+
+    primeiro_ticker_valido = df_opcoes_filtrado['ticker'].iloc[0] if not df_opcoes_filtrado.empty else None
+    
+    if primeiro_ticker_valido:
+        metrics = buscar_metrics_do_csv(df_opcoes_filtrado, activo_base, cotação_actual)
+        
+        # O cálculo do spread passa a usar o DF filtrado e atualizado
+        df_spreads = calcular_spreads(df_opcoes_filtrado, metrics, tipo_operacao_filtro)
+    else:
+        print(f"ERRO: Não há dados válidos de opções no CSV para {activo_base}.")
+        return
+
+    # =========================================================================
+    # 6. FILTRAGEM, VIABILIDADE E ORDENAÇÃO (COM FILTRO DE QUALIDADE)
+    # =========================================================================
+    
+    if df_spreads.empty:
+        print("\nNenhum spread válido encontrado após o filtro por tipo.")
+        return
+
+    # 0. CÁLCULO PRÉ-FILTRO: Adiciona a coluna 'abs_retorno' ao DataFrame completo.
+    df_spreads['abs_retorno'] = df_spreads['retorno_max_pct'].abs()
+    
+    # 1. CÁLCULO: Lucro Máximo Líquido Total
+    # Spreads de CRÉDITO
+    df_spreads.loc[df_spreads['premio_liquido_R$'] >= 0, 'lucro_max_liquido_total'] = \
+        (df_spreads['premio_liquido_R$'] * QUANTIDADE_CONTRATOS) - TAXAS_TOTAIS_OPERACAO
+        
+    # Spreads de DÉBITO
+    df_spreads.loc[df_spreads['premio_liquido_R$'] < 0, 'lucro_max_liquido_total'] = \
+        (df_spreads['ganho_max_R$'] * QUANTIDADE_CONTRATOS) + \
+        (df_spreads['premio_liquido_R$'] * QUANTIDADE_CONTRATOS) - TAXAS_TOTAIS_OPERACAO
+        
+    # 2. CÁLCULO: Prejuízo Máximo Líquido Total
+    # Custo/Risco total = Risco Teórico + Taxas
+    df_spreads['risco_max_liquido_total'] = \
+        (df_spreads['risco_max_R$'] * QUANTIDADE_CONTRATOS) + TAXAS_TOTAIS_OPERACAO
+    
+    # 3. CÁLCULO: Relação Risco/Retorno Líquida
+    df_spreads['relacao_risco_retorno_liquida'] = np.where(
+        df_spreads['risco_max_liquido_total'] > 0,
+        df_spreads['lucro_max_liquido_total'] / df_spreads['risco_max_liquido_total'],
+        0.0 # Evita divisão por zero
+    )
+    
+    # 4. FILTRAGEM DE VIABILIDADE:
+    
+    # a) Remove operações onde o lucro máximo é <= 0 (onde as taxas "comem" o lucro)
+    df_viavel = df_spreads[df_spreads['lucro_max_liquido_total'] > 0].copy()
+    
+    # b) NOVO FILTRO DE QUALIDADE: A relação Risco/Retorno Líquida deve ser >= ao MÍNIMO
+    df_viavel = df_viavel[df_viavel['relacao_risco_retorno_liquida'] >= MIN_RISCO_RETORNO_LIQUIDO].copy()
+    
+    
+    if df_viavel.empty:
+        print("\n===================================================================")
+        print("AVISO: NENHUM SPREAD É VIAVEL OU ATENDE AO CRITÉRIO DE QUALIDADE.")
+        print(f"O Lucro Máximo Líquido é menor que zero ou a Relação Risco/Retorno é inferior a {MIN_RISCO_RETORNO_LIQUIDO:.2f}.")
+        print(f"Taxas Totais: {formatar_moeda_br(TAXAS_TOTAIS_OPERACAO)}")
+        print("===================================================================")
+        
+        # Exibimos o melhor que passou na viabilidade básica (lucro > 0), mas não no Risco/Retorno
+        melhor_nao_qualificado = df_spreads[df_spreads['lucro_max_liquido_total'] > 0]
+        
+        if not melhor_nao_qualificado.empty:
+            melhor_nao_qualificado = melhor_nao_qualificado.sort_values(
+                by='relacao_risco_retorno_liquida', ascending=False
+            ).iloc[0]
+            print("\nRELATÓRIO DO MELHOR SPREAD NÃO QUALIFICADO (Lucro > 0, mas Risco/Retorno < 1.0):")
+            imprimir_relatorio_detalhado(melhor_nao_qualificado, cotação_actual)
+        return
+
+    # 5. ORDENAÇÃO: Ordena pelo melhor Retorno/Risco Líquido
+    df_viavel = df_viavel.sort_values(by='relacao_risco_retorno_liquida', ascending=False)
+    
+    # 6. Seleciona o melhor (primeira linha após ordenação)
+    melhor_spread = df_viavel.iloc[0]
+    
+    # 7. Imprime o relatório detalhado do melhor spread viável
+    print("\n===================================================================")
+    print(f"RELATÓRIO: MELHOR SPREAD (Risco/Retorno Líquido >= {MIN_RISCO_RETORNO_LIQUIDO:.2f})")
+    print("===================================================================")
+    imprimir_relatorio_detalhado(melhor_spread, cotação_actual)
+
+if __name__ == '__main__':
+    # Você pode alterar a data de análise padrão aqui se precisar testar outro dia
+    main()

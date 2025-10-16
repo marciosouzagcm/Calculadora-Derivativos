@@ -1,63 +1,23 @@
 package com.calculadora_derivativos.calculadora_backend.dto;
 
+import lombok.Data;
+import lombok.NoArgsConstructor;
 import java.math.BigDecimal;
 
-/**
- * DTO (Data Transfer Object) para encapsular o resultado do cálculo de spread.
- */
+@Data
+@NoArgsConstructor
 public class SpreadResponse {
     
-    private String statusMessage;
-    private BigDecimal lucroMaximo;
-    private BigDecimal prejuizoMaximo;
-    private BigDecimal breakevenPoint; // <--- NOVO CAMPO
+    private String mensagem;
+    private BigDecimal resultadoBruto;
+    private BigDecimal resultadoLiquido;
+    private BigDecimal probabilidadeSucesso; 
 
-    // Construtor padrão (necessário para serialização do JSON pelo Spring/Jackson)
-    public SpreadResponse() {
-    }
-
-    /**
-     * Construtor completo para retornar os resultados da otimização.
-     */
-    public SpreadResponse(String statusMessage, BigDecimal lucroMaximo, 
-                          BigDecimal prejuizoMaximo, BigDecimal breakevenPoint) { // <--- CONSTRUTOR ATUALIZADO
-        this.statusMessage = statusMessage;
-        this.lucroMaximo = lucroMaximo;
-        this.prejuizoMaximo = prejuizoMaximo;
-        this.breakevenPoint = breakevenPoint;
-    }
-
-    // --- Getters e Setters ---
-    
-    public String getStatusMessage() {
-        return statusMessage;
-    }
-
-    public void setStatusMessage(String statusMessage) {
-        this.statusMessage = statusMessage;
-    }
-
-    public BigDecimal getLucroMaximo() {
-        return lucroMaximo;
-    }
-
-    public void setLucroMaximo(BigDecimal lucroMaximo) {
-        this.lucroMaximo = lucroMaximo;
-    }
-
-    public BigDecimal getPrejuizoMaximo() {
-        return prejuizoMaximo;
-    }
-
-    public void setPrejuizoMaximo(BigDecimal prejuizoMaximo) {
-        this.prejuizoMaximo = prejuizoMaximo;
-    }
-    
-    public BigDecimal getBreakevenPoint() { // <--- NOVO GETTER
-        return breakevenPoint;
-    }
-
-    public void setBreakevenPoint(BigDecimal breakevenPoint) { // <--- NOVO SETTER
-        this.breakevenPoint = breakevenPoint;
+    // CORREÇÃO: Construtor de 4 argumentos NECESSÁRIO para o SpreadService
+    public SpreadResponse(String mensagem, BigDecimal resultadoBruto, BigDecimal resultadoLiquido, BigDecimal probabilidadeSucesso) {
+        this.mensagem = mensagem;
+        this.resultadoBruto = resultadoBruto;
+        this.resultadoLiquido = resultadoLiquido;
+        this.probabilidadeSucesso = probabilidadeSucesso;
     }
 }

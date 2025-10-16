@@ -1,43 +1,24 @@
 package com.calculadora_derivativos.calculadora_backend.dto;
 
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import lombok.AllArgsConstructor;
+import java.math.BigDecimal;
 import java.util.List;
 
-/**
- * DTO (Data Transfer Object) para encapsular os dados de entrada
- * da requisição de cálculo de Spread, suportando estratégias de múltiplas pernas.
- */
+@Data 
+@NoArgsConstructor 
+@AllArgsConstructor 
 public class SpreadRequest {
-    
-    // Identificador do Ativo Subjacente (ex: PETR4, VALE3)
-    private String ativoSubjacente;
-    
-    // A lista de opções (Pernas) que compõem a estratégia de spread.
-    private List<PernaSpread> pernas;
-    
-    // Construtor padrão
-    public SpreadRequest() {}
 
-    // Construtor com campos
-    public SpreadRequest(String ativoSubjacente, List<PernaSpread> pernas) {
-        this.ativoSubjacente = ativoSubjacente;
-        this.pernas = pernas;
-    }
-    
-    // --- Getters e Setters para o Spring mapear a requisição JSON ---
+    private String ativoSubjacente; 
+    private List<PernaSpread> pernas; 
+    private BigDecimal taxasOperacionais;
 
-    public String getAtivoSubjacente() {
-        return ativoSubjacente;
-    }
+    // CORREÇÃO: Campo adicionado para resolver cannot find symbol: getCotacaoAtualAtivo()
+    private BigDecimal cotacaoAtualAtivo; 
 
-    public void setAtivoSubjacente(String ativoSubjacente) {
-        this.ativoSubjacente = ativoSubjacente;
-    }
-
-    public List<PernaSpread> getPernas() {
-        return pernas;
-    }
-
-    public void setPernas(List<PernaSpread> pernas) {
-        this.pernas = pernas;
-    }
+    private BigDecimal taxaJuros; 
+    private BigDecimal precoAtual; // Se cotacaoAtualAtivo e precoAtual forem a mesma coisa, use apenas um.
+    private String dataCalculo;    
 }

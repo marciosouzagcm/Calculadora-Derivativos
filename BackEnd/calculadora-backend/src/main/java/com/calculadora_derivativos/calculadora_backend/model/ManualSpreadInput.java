@@ -1,23 +1,24 @@
 package com.calculadora_derivativos.calculadora_backend.model;
 
-import lombok.Data; // Assegure-se de que o Lombok está no seu pom.xml
+import lombok.Data;
+import java.math.BigDecimal;
 
 @Data
 public class ManualSpreadInput {
     
     // Dados do Ativo
     private String nomeAtivo;
-    private Double valorAtivo;
+    private BigDecimal valorAtivo; // Alterado para BigDecimal
     
     // Dados da Call Vendida (Strike Menor)
-    private Double strikeCallVendida; 
-    private Double premioCallVendida; // Prêmio em R$ digitado
+    private BigDecimal strikeCallVendida; // Alterado para BigDecimal
+    private BigDecimal premioCallVendida; // Alterado para BigDecimal
     
     // Dados da Call Comprada (Strike Maior)
-    private Double strikeCallComprada; 
-    private Double premioCallComprada; // Prêmio em R$ digitado
+    private BigDecimal strikeCallComprada; // Alterado para BigDecimal
+    private BigDecimal premioCallComprada; // Alterado para BigDecimal
     
     // Dados Operacionais
     private Integer quantidade;
-    private Double taxas; // Taxas e emolumentos por contrato
+    private BigDecimal taxas; // Alterado para BigDecimal
 }

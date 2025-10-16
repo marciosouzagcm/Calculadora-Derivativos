@@ -1,63 +1,80 @@
 package com.calculadora_derivativos.calculadora_backend.model;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import jakarta.persistence.*;
+import java.math.BigDecimal;
+import java.time.LocalDate;
 
-/**
- * Entidade que representa uma opção de negociação, utilizando Lombok para 
- * reduzir boilerplate code (Getters/Setters). Mapeia todas as 10 colunas 
- * cruciais do CSV, incluindo as Gregas.
- */
 @Entity
-@Table(name = "opcoes_final_para_mysql") // Nome da tabela no MySQL
-@Data // Gera Getters, Setters, toString, equals e hashCode
-@NoArgsConstructor // Garante o construtor padrão (necessário para JPA)
+@Table(name = "opcoes_final_tratado") 
 public class Option {
 
-    // Chave primária (ID)
+    public Option() {
+    }
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    // Ticker da opção (Ex: BOVAK137W1). Única no banco.
+    // Coluna 'ticker'
     @Column(unique = true)
     private String ticker;
 
-    // Código do ativo base (Ex: BOVA11). Mapeado para id_acao.
+    // Mapeado para 'id_acao' no DB (como esperado pelo DataLoader)
     @Column(name = "id_acao") 
-    private String idAcao;
-
-    // Tipo da opção (CALL ou PUT)
+    private String idAcao; 
+    
     private String tipo;
+    private LocalDate vencimento; 
+    private BigDecimal strike; 
+    private BigDecimal preco; 
 
-    // Preço de exercício
-    private Double strike;
-
-    // Prêmio (Preço) da opção. Mapeado para premio_pct.
-    @Column(name = "premio_pct")
-    private Double premioPct;
-
-    // Volatilidade Implícita. Mapeado para vol_implicita.
+    // Mapeado para 'vol_implicita' no DB
     @Column(name = "vol_implicita")
-    private Double volImplicita;
+    private BigDecimal volImplicita; 
 
-    // GREGAS (4 Colunas)
+    private BigDecimal delta; 
+    private BigDecimal gamma; 
+    private BigDecimal theta; 
+    private BigDecimal vega; 
 
-    // Sensibilidade do preço da opção à variação do ativo base
-    private Double delta;
+    // -----------------------------------------------------------------------
+    // GETTERS E SETTERS (Corrigidos)
+    // -----------------------------------------------------------------------
+
+    public Long getId() { return id; }
+    public void setId(Long id) { this.id = id; }
     
-    // Sensibilidade do Delta à variação do ativo base
-    private Double gamma;
+    public String getTicker() { return ticker; }
+    public void setTicker(String ticker) { this.ticker = ticker; }
     
-    // Sensibilidade do preço da opção à passagem do tempo (Time Decay)
-    private Double theta;
+    public String getIdAcao() { return idAcao; }
+    // CORRIGIDO: idAcao (apenas um 'a')
+    public void setIdAcao(String idAcao) { this.idAcao = idAcao; } 
     
-    // Sensibilidade do preço da opção à variação da Volatilidade Implícita
-    private Double vega;
+    public String getTipo() { return tipo; }
+    public void setTipo(String tipo) { this.tipo = tipo; }
+    
+    public LocalDate getVencimento() { return vencimento; }
+    public void setVencimento(LocalDate vencimento) { this.vencimento = vencimento; }
+    
+    public BigDecimal getStrike() { return strike; }
+    public void setStrike(BigDecimal strike) { this.strike = strike; }
+    
+    public BigDecimal getPreco() { return preco; }
+    public void setPreco(BigDecimal preco) { this.preco = preco; }
+    
+    public BigDecimal getVolImplicita() { return volImplicita; }
+    public void setVolImplicita(BigDecimal volImplicita) { this.volImplicita = volImplicita; }
+    
+    public BigDecimal getDelta() { return delta; }
+    public void setDelta(BigDecimal delta) { this.delta = delta; }
+    
+    public BigDecimal getGamma() { return gamma; }
+    public void setGamma(BigDecimal gamma) { this.gamma = gamma; }
+    
+    public BigDecimal getTheta() { return theta; }
+    public void setTheta(BigDecimal theta) { this.theta = theta; }
+    
+    public BigDecimal getVega() { return vega; }
+    public void setVega(BigDecimal vega) { this.vega = vega; }
 }

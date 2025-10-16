@@ -3,7 +3,9 @@ package com.calculadora_derivativos.calculadora_backend.model;
 import jakarta.persistence.*;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import lombok.Data; // Importado para simplificar o código
 
+@Data // Adicionando Lombok para gerar Getters/Setters/ToString/Equals/HashCode
 @Entity
 @Table(name = "opcoes_final_tratado") 
 public class Opcao {
@@ -12,74 +14,33 @@ public class Opcao {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    // Ticker/Código da opção (e.g., BOVAJ134W4)
+    // --- Identificadores ---
+    @Column(name = "ticker") // Se 'codigo' for o ticker da opção, mantenha.
     private String codigo; 
+    
+    @Column(name = "idAcao") // Correspondente a 'idAcao' do CSV/Python
+    private String idAcao; // Ticker do Ativo Base (Ex: PETR4)
 
-    // Tipo da opção: CALL ou PUT
+    // --- Dados da Opção ---
+    @Column(name = "tipo") // Tipo da opção: CALL ou PUT (correspondente ao campo 'tipo' no Python)
     private String tipoOpcao; 
 
-    // Preço da opção (o prêmio pago/recebido) - corresponde a 'premioPct' no CSV
-    private BigDecimal preco; 
+    private BigDecimal preco; // Prêmio em R$ (Corresponde a 'premio' se disponível, ou 'premioPct')
+    private BigDecimal strike; // Preço de exercício (Strike)
+    private LocalDate vencimento; // Data de vencimento
 
-    // Preço de exercício (Strike) - Essencial para o cálculo do Spread
-    private BigDecimal strike; 
-
-    // Data de vencimento
-    private LocalDate vencimento; 
-
-    // Construtor padrão (necessário pelo JPA)
-    public Opcao() {
-    }
-
-    // --- Métodos Getters ---
+    // --- Métricas de Cálculo / Gregas (Crucial para replicar a lógica do Python) ---
+    // Usamos BigDecimal para precisão em todos os cálculos
     
-    public Long getId() {
-        return id;
-    }
-
-    public String getCodigo() {
-        return codigo;
-    }
-
-    public String getTipoOpcao() {
-        return tipoOpcao;
-    }
-
-    public BigDecimal getPreco() {
-        return preco;
-    }
+    private BigDecimal delta;
+    private BigDecimal gamma;
+    private BigDecimal theta;
+    private BigDecimal vega;
+    private BigDecimal volImplicita; // Volatilidade Implícita
     
-    public BigDecimal getStrike() { // NOVO MÉTODO CORRETO
-        return strike;
-    }
-
-    public LocalDate getVencimento() {
-        return vencimento;
-    }
-    
-    // --- Métodos Setters ---
-
-    public void setId(Long id) {
-        this.id = id;
-    }
-
-    public void setCodigo(String codigo) {
-        this.codigo = codigo;
-    }
-
-    public void setTipoOpcao(String tipoOpcao) {
-        this.tipoOpcao = tipoOpcao;
-    }
-
-    public void setPreco(BigDecimal preco) {
-        this.preco = preco;
-    }
-    
-    public void setStrike(BigDecimal strike) { // NOVO MÉTODO CORRETO
-        this.strike = strike;
-    }
-
-    public void setVencimento(LocalDate vencimento) {
-        this.vencimento = vencimento;
-    }
+    // Coluna para dias úteis (para T-dias). O Python o recalculava, mas é bom tê-lo
+    // como Double/BigDecimal para o cálculo de Black-Scholes (T em anos).
+    @Transient // Não persiste no BD se for recalculado
+    private Integer diasUteis; 
 }
+// OBS: Se você usa o Lombok (@Data), remova todos os Getters/Setters manuais.
