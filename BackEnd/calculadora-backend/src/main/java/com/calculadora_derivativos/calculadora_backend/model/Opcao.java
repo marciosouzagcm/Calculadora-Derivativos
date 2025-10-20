@@ -1,46 +1,101 @@
 package com.calculadora_derivativos.calculadora_backend.model;
 
-import jakarta.persistence.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import lombok.Data; // Importado para simplificar o código
+import java.util.Objects;
 
-@Data // Adicionando Lombok para gerar Getters/Setters/ToString/Equals/HashCode
 @Entity
 @Table(name = "opcoes_final_tratado") 
 public class Opcao {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+    private Long id; 
 
-    // --- Identificadores ---
-    @Column(name = "ticker") // Se 'codigo' for o ticker da opção, mantenha.
-    private String codigo; 
+    // Mapeia a coluna 'idAcao'
+    @Column(name = "idAcao") 
+    private String tickerCamelCase; 
+
+    // Mapeia a coluna 'id_acao'
+    @Column(name = "id_acao") 
+    private String tickerSnakeCase; 
+
+    private String ticker; // Supondo que você ainda tem um campo 'ticker'
+
+    private String tipo; // "CALL" ou "PUT"
+    private BigDecimal strike;
+    private LocalDate vencimento;
+    private BigDecimal preco; 
+
+    // Construtor padrão (obrigatório para JPA)
+    public Opcao() {}
+
+    // ------------------------------------
+    // GETTERS
+    // ------------------------------------
     
-    @Column(name = "idAcao") // Correspondente a 'idAcao' do CSV/Python
-    private String idAcao; // Ticker do Ativo Base (Ex: PETR4)
-
-    // --- Dados da Opção ---
-    @Column(name = "tipo") // Tipo da opção: CALL ou PUT (correspondente ao campo 'tipo' no Python)
-    private String tipoOpcao; 
-
-    private BigDecimal preco; // Prêmio em R$ (Corresponde a 'premio' se disponível, ou 'premioPct')
-    private BigDecimal strike; // Preço de exercício (Strike)
-    private LocalDate vencimento; // Data de vencimento
-
-    // --- Métricas de Cálculo / Gregas (Crucial para replicar a lógica do Python) ---
-    // Usamos BigDecimal para precisão em todos os cálculos
+    public Long getId() { return id; }
+    public String getTickerCamelCase() { return tickerCamelCase; }
+    public String getTickerSnakeCase() { return tickerSnakeCase; }
+    public String getTicker() { return ticker; }
+    public String getTipo() { return tipo; }
+    public BigDecimal getStrike() { return strike; }
+    public LocalDate getVencimento() { return vencimento; }
+    public BigDecimal getPreco() { return preco; }
     
-    private BigDecimal delta;
-    private BigDecimal gamma;
-    private BigDecimal theta;
-    private BigDecimal vega;
-    private BigDecimal volImplicita; // Volatilidade Implícita
+    /**
+     * Método utilitário para retornar o ticker real (o que não for nulo/vazio)
+     * Usado na lógica de serviço, mas não pelo JPA para busca.
+     */
+    public String getTickerReal() {
+        if (tickerCamelCase != null && !tickerCamelCase.isEmpty()) {
+            return tickerCamelCase;
+        }
+        return tickerSnakeCase;
+    }
+
+    // ------------------------------------
+    // SETTERS (INCLUÍDOS AGORA COMPLETAMENTE)
+    // ------------------------------------
+
+    public void setId(Long id) { this.id = id; }
+    public void setTickerCamelCase(String tickerCamelCase) { this.tickerCamelCase = tickerCamelCase; }
+    public void setTickerSnakeCase(String tickerSnakeCase) { this.tickerSnakeCase = tickerSnakeCase; }
+    public void setTicker(String ticker) { this.ticker = ticker; }
+    public void setTipo(String tipo) { this.tipo = tipo; }
+    public void setStrike(BigDecimal strike) { this.strike = strike; }
+    public void setVencimento(LocalDate vencimento) { this.vencimento = vencimento; }
+    public void setPreco(BigDecimal preco) { this.preco = preco; }
+
+    // ------------------------------------
+    // MÉTODOS DE CONVENIÊNCIA (Opcionais, mas boas práticas)
+    // ------------------------------------
     
-    // Coluna para dias úteis (para T-dias). O Python o recalculava, mas é bom tê-lo
-    // como Double/BigDecimal para o cálculo de Black-Scholes (T em anos).
-    @Transient // Não persiste no BD se for recalculado
-    private Integer diasUteis; 
+    @Override
+    public String toString() {
+        return "Opcao{" +
+                "id=" + id +
+                ", tickerReal='" + getTickerReal() + '\'' +
+                ", tipo='" + tipo + '\'' +
+                ", strike=" + strike +
+                ", vencimento=" + vencimento +
+                ", preco=" + preco +
+                '}';
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        Opcao opcao = (Opcao) o;
+        return Objects.equals(id, opcao.id);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(id);
+    }
 }
-// OBS: Se você usa o Lombok (@Data), remova todos os Getters/Setters manuais.

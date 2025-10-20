@@ -1,24 +1,16 @@
 package com.calculadora_derivativos.calculadora_backend.dto;
 
-import lombok.Data;
-import lombok.NoArgsConstructor;
-import lombok.AllArgsConstructor;
 import java.math.BigDecimal;
 import java.util.List;
 
-@Data 
-@NoArgsConstructor 
-@AllArgsConstructor 
-public class SpreadRequest {
-
-    private String ativoSubjacente; 
-    private List<PernaSpread> pernas; 
-    private BigDecimal taxasOperacionais;
-
-    // CORREÇÃO: Campo adicionado para resolver cannot find symbol: getCotacaoAtualAtivo()
-    private BigDecimal cotacaoAtualAtivo; 
-
-    private BigDecimal taxaJuros; 
-    private BigDecimal precoAtual; // Se cotacaoAtualAtivo e precoAtual forem a mesma coisa, use apenas um.
-    private String dataCalculo;    
-}
+/**
+ * DTO (Data Transfer Object) para requisição de cálculo de spread.
+ * Contém o ativo subjacente, cotação atual, taxas e a lista de pernas da estratégia.
+ * Usa Record (Java 16+) para gerar construtor e métodos de acesso automaticamente.
+ */
+public record SpreadRequest(
+    String ativoSubjacente,         // Ticker da ação (Ex: PETR4)
+    BigDecimal cotacaoAtualAtivo,   // Preço atual do ativo (necessário para calcular o ponto de equilíbrio)
+    BigDecimal taxasOperacionais,   // Taxas e custos por operação
+    List<PernaSpread> pernas        // Lista de pernas (compra/venda) que compõem o spread
+) {}

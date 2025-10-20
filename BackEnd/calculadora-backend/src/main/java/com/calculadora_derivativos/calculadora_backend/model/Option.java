@@ -1,8 +1,15 @@
 package com.calculadora_derivativos.calculadora_backend.model;
 
-import jakarta.persistence.*;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+
+import jakarta.persistence.Column; // Novo import necessário
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
 
 @Entity
 @Table(name = "opcoes_final_tratado") 
@@ -19,12 +26,25 @@ public class Option {
     @Column(unique = true)
     private String ticker;
 
-    // Mapeado para 'id_acao' no DB (como esperado pelo DataLoader)
+    // Mapeado para 'id_acao' no DB
     @Column(name = "id_acao") 
     private String idAcao; 
     
     private String tipo;
     private LocalDate vencimento; 
+    
+    // --- 🟢 NOVOS CAMPOS ADICIONADOS ---
+    
+    // Mapeado para 'dias_uteis' no DB
+    @Column(name = "dias_uteis")
+    private Integer diasUteis;
+    
+    // Mapeado para 'data_hora' no DB
+    @Column(name = "data_hora")
+    private LocalDateTime dataHora; // Usamos LocalDateTime para data e hora
+    
+    // --- 🔴 FIM DOS NOVOS CAMPOS ---
+    
     private BigDecimal strike; 
     private BigDecimal preco; 
 
@@ -38,7 +58,7 @@ public class Option {
     private BigDecimal vega; 
 
     // -----------------------------------------------------------------------
-    // GETTERS E SETTERS (Corrigidos)
+    // GETTERS E SETTERS
     // -----------------------------------------------------------------------
 
     public Long getId() { return id; }
@@ -48,7 +68,6 @@ public class Option {
     public void setTicker(String ticker) { this.ticker = ticker; }
     
     public String getIdAcao() { return idAcao; }
-    // CORRIGIDO: idAcao (apenas um 'a')
     public void setIdAcao(String idAcao) { this.idAcao = idAcao; } 
     
     public String getTipo() { return tipo; }
@@ -56,6 +75,14 @@ public class Option {
     
     public LocalDate getVencimento() { return vencimento; }
     public void setVencimento(LocalDate vencimento) { this.vencimento = vencimento; }
+    
+    // --- 🟢 GETTER/SETTER para diasUteis ---
+    public Integer getDiasUteis() { return diasUteis; }
+    public void setDiasUteis(Integer diasUteis) { this.diasUteis = diasUteis; }
+    
+    // --- 🟢 GETTER/SETTER para dataHora ---
+    public LocalDateTime getDataHora() { return dataHora; }
+    public void setDataHora(LocalDateTime dataHora) { this.dataHora = dataHora; }
     
     public BigDecimal getStrike() { return strike; }
     public void setStrike(BigDecimal strike) { this.strike = strike; }

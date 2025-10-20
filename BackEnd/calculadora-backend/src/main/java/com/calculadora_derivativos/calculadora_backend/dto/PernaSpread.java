@@ -1,26 +1,12 @@
 package com.calculadora_derivativos.calculadora_backend.dto;
 
-import lombok.Data;
-import lombok.NoArgsConstructor;
-import lombok.AllArgsConstructor;
-import java.math.BigDecimal;
-
-@Data
-@NoArgsConstructor 
-@AllArgsConstructor 
-public class PernaSpread {
-    
-    // CORREÇÃO: Nome do campo ajustado para 'ticker' (resolve getTicker())
-    private String ticker; 
-    
-    private int quantidade;     
-    private BigDecimal precoUnitario; 
-    
-    // CORREÇÃO: Campo adicionado (resolve getOperacao())
-    // Ex: 'C' (Compra da Perna) ou 'V' (Venda da Perna)
-    private String operacao; 
-    
-    private String tipoOpcao; 
-    private BigDecimal strike; 
-    private String dataVencimento; 
-}
+/**
+ * Representa uma perna individual em uma estratégia de spread (Ex: Compra de PETRC30).
+ * O uso de 'record' (Java 16+) simplifica a criação de DTOs, gerando automaticamente 
+ * construtor, getters, toString(), equals() e hashCode().
+ */
+public record PernaSpread(
+    String ticker,      // Ex: PETRC30
+    int quantidade,     // Geralmente 100 para um lote
+    String operacao     // COMPRA ou VENDA
+) {}
