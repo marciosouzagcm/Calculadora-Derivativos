@@ -1,12 +1,11 @@
 package com.calculadora_derivativos.calculadora_backend.dto;
 
 /**
- * Representa uma perna individual em uma estratégia de spread (Ex: Compra de PETRC30).
- * O uso de 'record' (Java 16+) simplifica a criação de DTOs, gerando automaticamente 
- * construtor, getters, toString(), equals() e hashCode().
+ * DTO simplificado usado nos requests/tests do projeto.
  */
 public record PernaSpread(
-    String ticker,      // Ex: PETRC30
-    int quantidade,     // Geralmente 100 para um lote
-    String operacao     // COMPRA ou VENDA
-) {}
+        String ticker, // ex: "PETRC35"
+        int quantidade, // ex: 1
+        String operacao // "COMPRA" ou "VENDA"
+) {
+}

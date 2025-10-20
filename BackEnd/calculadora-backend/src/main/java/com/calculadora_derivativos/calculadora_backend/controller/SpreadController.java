@@ -1,125 +1,142 @@
 package com.calculadora_derivativos.calculadora_backend.controller;
 
 import java.math.BigDecimal;
-import java.text.NumberFormat;
-import java.text.ParseException;
-import java.util.Locale;
 
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.WebDataBinder;
+import org.springframework.web.bind.annotation.CrossOrigin; // Import para o CORS
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.InitBinder;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.calculadora_derivativos.calculadora_backend.dto.OtimizacaoResponse;
-import com.calculadora_derivativos.calculadora_backend.service.OtimizacaoSpreadService;
+import com.calculadora_derivativos.calculadora_backend.dto.SpreadRequest;
+import com.calculadora_derivativos.calculadora_backend.dto.SpreadResponse;
+import com.calculadora_derivativos.calculadora_backend.service.SpreadService;
 
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.DecimalMin;
-
+/**
+ * Controller responsável por receber requisições de cálculo e otimização de
+ * spreads.
+ * Adicionada anotação @CrossOrigin para permitir requisições de frontend.
+ */
 @RestController
-@RequestMapping("/api/spreads/otimizar")
+@RequestMapping("/spread")
+@CrossOrigin(origins = "*") // Permite requisições de qualquer origem (ideal para desenvolvimento/teste)
 public class SpreadController {
 
-    private final OtimizacaoSpreadService otimizacaoSpreadService;
+    private final SpreadService spreadService;
 
     @Autowired
-    public SpreadController(OtimizacaoSpreadService otimizacaoSpreadService) {
-        this.otimizacaoSpreadService = otimizacaoSpreadService;
+    public SpreadController(SpreadService spreadService) {
+        this.spreadService = spreadService;
     }
 
-    // CORREÇÃO ESSENCIAL: Permite que o Spring lide com vírgulas (',') em números
-    // decimais.
-    @InitBinder
-    public void initBinder(WebDataBinder binder) {
-        binder.registerCustomEditor(BigDecimal.class, new CustomBigDecimalEditor());
+    // --- 1. CÁLCULO MANUAL (POST) ---
+
+    /**
+     * Calcula o resultado de um spread com parâmetros fornecidos manualmente.
+     * * @param request Dados de entrada para o cálculo do spread.
+     * 
+     * @return O resultado do cálculo do spread.
+     */
+    @PostMapping("/manual/calcular")
+    public SpreadResponse calcularManual(@RequestBody SpreadRequest request) {
+        return spreadService.calcularSpread(request);
     }
 
-    // Classe auxiliar para conversão de BigDecimal
-    private static class CustomBigDecimalEditor extends java.beans.PropertyEditorSupport {
-        @Override
-        public void setAsText(String text) throws IllegalArgumentException {
-            if (text == null || text.trim().isEmpty()) {
-                setValue(null);
-                return;
-            }
-            try {
-                // Tenta formatar com ponto (padrão inglês/Spring)
-                setValue(new BigDecimal(text.trim()));
-            } catch (NumberFormatException e) {
-                // Se falhar, tenta formatar com vírgula (padrão brasileiro)
-                try {
-                    NumberFormat format = NumberFormat.getInstance(new Locale("pt", "BR"));
-                    Number number = format.parse(text.trim());
-                    // Conversão mais segura para BigDecimal
-                    setValue(new BigDecimal(number.toString()));
-                } catch (ParseException ex) {
-                    throw new IllegalArgumentException(
-                            "Não foi possível converter o valor '" + text + "' para um número decimal.", ex);
-                }
-            }
-        }
+    // --- 2. OTIMIZAÇÃO INDIVIDUAL: Bull Call Spread (Call-Alta) ---
+
+    /**
+     * Otimiza a melhor combinação de Bull Call Spread para uma determinada ação.
+     * * @param idAcao            O ID da ação (ex: PETR4).
+     * 
+     * @param cotacaoAtualAtivo Preço atual do ativo.
+     * @param taxasOperacionais Taxas.
+     * @return O SpreadResponse da estratégia otimizada.
+     */
+    @GetMapping("/otimizar/call-alta/{idAcao}")
+    public SpreadResponse otimizarBullCallSpread(
+            @PathVariable String idAcao,
+            @RequestParam BigDecimal cotacaoAtualAtivo,
+            @RequestParam BigDecimal taxasOperacionais) {
+        return spreadService.otimizarBullCallSpread(idAcao, cotacaoAtualAtivo, taxasOperacionais);
     }
 
-    // ------------------------------------
-    // --- ENDPOINTS DE OTIMIZAÇÃO (4 TIPOS) ---
-    // ------------------------------------
+    // --- 3. OTIMIZAÇÃO INDIVIDUAL: Bear Put Spread (Put-Baixa) ---
 
-    // 1. Call Spread de Alta (Débito)
-    @GetMapping("/call-alta")
-    public ResponseEntity<OtimizacaoResponse> otimizarCallSpreadDeAlta(
-            @RequestParam String idAcao,
-            @RequestParam @Valid @DecimalMin(value = "0.01", message = "A cotação deve ser maior que zero.") BigDecimal cotacaoAtualAtivo,
-            @RequestParam @Valid @DecimalMin(value = "0.00", message = "As taxas devem ser não-negativas.") BigDecimal taxasOperacionais) {
-
-        return ResponseEntity
-                .ok(otimizacaoSpreadService.otimizarCallSpreadDeAlta(idAcao, cotacaoAtualAtivo, taxasOperacionais));
+    /**
+     * Otimiza a melhor combinação de Bear Put Spread para uma determinada ação.
+     * * @param idAcao            O ID da ação (ex: PETR4).
+     * 
+     * @param cotacaoAtualAtivo Preço atual do ativo.
+     * @param taxasOperacionais Taxas.
+     * @return O SpreadResponse da estratégia otimizada.
+     */
+    @GetMapping("/otimizar/put-baixa/{idAcao}")
+    public SpreadResponse otimizarBearPutSpread(
+            @PathVariable String idAcao,
+            @RequestParam BigDecimal cotacaoAtualAtivo,
+            @RequestParam BigDecimal taxasOperacionais) {
+        return spreadService.otimizarBearPutSpread(idAcao, cotacaoAtualAtivo, taxasOperacionais);
     }
 
-    // 2. Put Spread de Baixa (Débito)
-    @GetMapping("/put-baixa")
-    public ResponseEntity<OtimizacaoResponse> otimizarPutSpreadDeBaixa(
-            @RequestParam String idAcao,
-            @RequestParam @Valid @DecimalMin(value = "0.01", message = "A cotação deve ser maior que zero.") BigDecimal cotacaoAtualAtivo,
-            @RequestParam @Valid @DecimalMin(value = "0.00", message = "As taxas devem ser não-negativas.") BigDecimal taxasOperacionais) {
+    // --- 4. NOVO ENDPOINT INDIVIDUAL: Bull Put Spread (Put-Alta) ---
 
-        return ResponseEntity
-                .ok(otimizacaoSpreadService.otimizarPutSpreadDeBaixa(idAcao, cotacaoAtualAtivo, taxasOperacionais));
+    /**
+     * Otimiza a melhor combinação de Bull Put Spread para uma determinada ação.
+     * * @param idAcao            O ID da ação (ex: PETR4).
+     * 
+     * @param cotacaoAtualAtivo Preço atual do ativo.
+     * @param taxasOperacionais Taxas.
+     * @return O SpreadResponse da estratégia otimizada.
+     */
+    @GetMapping("/otimizar/put-alta/{idAcao}")
+    public SpreadResponse otimizarBullPutSpread(
+            @PathVariable String idAcao,
+            @RequestParam BigDecimal cotacaoAtualAtivo,
+            @RequestParam BigDecimal taxasOperacionais) {
+        // CORREÇÃO: Chamando o método otimizarBullPutSpread, e não
+        // otimizarBearCallSpread
+        return spreadService.otimizarBullPutSpread(idAcao, cotacaoAtualAtivo, taxasOperacionais);
     }
 
-    // 3. Call Spread de Baixa (Crédito)
-    @GetMapping("/call-baixa")
-    public ResponseEntity<OtimizacaoResponse> otimizarCallSpreadDeBaixa(
-            @RequestParam String idAcao,
-            @RequestParam @Valid @DecimalMin(value = "0.01", message = "A cotação deve ser maior que zero.") BigDecimal cotacaoAtualAtivo,
-            @RequestParam @Valid @DecimalMin(value = "0.00", message = "As taxas devem ser não-negativas.") BigDecimal taxasOperacionais) {
+    // --- 5. NOVO ENDPOINT INDIVIDUAL: Bear Call Spread (Call-Baixa) ---
 
-        return ResponseEntity
-                .ok(otimizacaoSpreadService.otimizarCallSpreadDeBaixa(idAcao, cotacaoAtualAtivo, taxasOperacionais));
+    /**
+     * Otimiza a melhor combinação de Bear Call Spread para uma determinada ação.
+     * * @param idAcao            O ID da ação (ex: PETR4).
+     * 
+     * @param cotacaoAtualAtivo Preço atual do ativo.
+     * @param taxasOperacionais Taxas.
+     * @return O SpreadResponse da estratégia otimizada.
+     */
+    @GetMapping("/otimizar/call-baixa/{idAcao}")
+    public SpreadResponse otimizarBearCallSpread(
+            @PathVariable String idAcao,
+            @RequestParam BigDecimal cotacaoAtualAtivo,
+            @RequestParam BigDecimal taxasOperacionais) {
+        return spreadService.otimizarBearCallSpread(idAcao, cotacaoAtualAtivo, taxasOperacionais);
     }
 
-    // 4. Put Spread de Alta (Crédito)
-    @GetMapping("/put-alta")
-    public ResponseEntity<OtimizacaoResponse> otimizarPutSpreadDeAlta(
-            @RequestParam String idAcao,
-            @RequestParam @Valid @DecimalMin(value = "0.01", message = "A cotação deve ser maior que zero.") BigDecimal cotacaoAtualAtivo,
-            @RequestParam @Valid @DecimalMin(value = "0.00", message = "As taxas devem ser não-negativas.") BigDecimal taxasOperacionais) {
+    // --- 6. NOVO ENDPOINT UNIFICADO: OTIMIZAÇÃO DA MELHOR ESTRATÉGIA ---
 
-        return ResponseEntity
-                .ok(otimizacaoSpreadService.otimizarPutSpreadDeAlta(idAcao, cotacaoAtualAtivo, taxasOperacionais));
-    }
-
-    // 5. OTIMIZAÇÃO GERAL (Compara os 4 e retorna o melhor)
-    @GetMapping("/geral")
-    public ResponseEntity<OtimizacaoResponse> otimizarMelhorSpreadGeral(
-            @RequestParam String idAcao,
-            @RequestParam @Valid @DecimalMin(value = "0.01", message = "A cotação deve ser maior que zero.") BigDecimal cotacaoAtualAtivo,
-            @RequestParam @Valid @DecimalMin(value = "0.00", message = "As taxas devem ser não-negativas.") BigDecimal taxasOperacionais) {
-
-        return ResponseEntity
-                .ok(otimizacaoSpreadService.otimizarMelhorSpreadGeral(idAcao, cotacaoAtualAtivo, taxasOperacionais));
+    /**
+     * Compara as 4 estratégias direcionais (Bull Call, Bear Put, Bull Put, Bear
+     * Call)
+     * e retorna a que oferece o melhor resultado (maior Lucro Máximo).
+     * * @param idAcao            O ID da ação (ex: PETR4).
+     * 
+     * @param cotacaoAtualAtivo Preço atual do ativo.
+     * @param taxasOperacionais Taxas.
+     * @return O SpreadResponse da melhor estratégia encontrada.
+     */
+    @GetMapping("/otimizar/melhor/{idAcao}")
+    public SpreadResponse otimizarMelhorEstrategia(
+            @PathVariable String idAcao,
+            @RequestParam BigDecimal cotacaoAtualAtivo,
+            @RequestParam BigDecimal taxasOperacionais) {
+        return spreadService.otimizarMelhorEstrategia(idAcao, cotacaoAtualAtivo, taxasOperacionais);
     }
 }

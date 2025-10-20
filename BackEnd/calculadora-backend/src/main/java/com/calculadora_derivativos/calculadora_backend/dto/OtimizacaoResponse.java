@@ -11,9 +11,9 @@ import java.util.List;
  * Usa Record (Java 16+) para gerar métodos de acesso.
  */
 public record OtimizacaoResponse(
-    String ativoSubjacente,                 // Ativo que foi otimizado (Ex: PETR4)
-    String tipoOtimizacao,                  // Tipo de spread otimizado (Ex: "CALL SPREAD DE ALTA")
-    BigDecimal resultadoOtimizacao,         // Valor máximo (Lucro Máximo ou Prejuízo Mínimo)
-    SpreadResponse melhorEstrategia,         // O DTO de resposta que gerou o melhor resultado
+    String ativoSubjacente,              // Ativo que foi otimizado (Ex: PETR4)
+    String tipoOtimizacao,               // Tipo de spread otimizado (Ex: "CALL SPREAD DE ALTA")
+    BigDecimal resultadoOtimizacao,      // Valor máximo (Lucro Máximo ou Prejuízo Mínimo)
+    SpreadResponse melhorEstrategia,     // O DTO de resposta que gerou o melhor resultado
     List<SpreadResponse> estrategiasAvaliadas // Lista opcional de todas as estratégias testadas
 ) {}

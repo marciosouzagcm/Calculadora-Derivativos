@@ -8,7 +8,7 @@ import numpy as np
 # =========================================================================
 
 # Ajuste o caminho do arquivo para o local correto na sua máquina
-nome_arquivo_excel = r"C:\Users\DELL\Downloads\Opções PETR4 - CALLs e PUTs - lista, pesquisa e cotações.xlsx"
+nome_arquivo_excel = r"C:\Users\DELL\Downloads\Opções BOVA11 - CALLs e PUTs - lista, pesquisa e cotações (1).xlsx"
 nome_arquivo_saida = 'opcoes_final_tratado.csv'
 
 # --- MAPEAMENTOS DE VERSÃO E CORREÇÃO (V31) ---

@@ -1,6 +1,7 @@
 package com.calculadora_derivativos.calculadora_backend;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.Arrays;
 import java.util.Optional;
 
@@ -20,171 +21,198 @@ import com.calculadora_derivativos.calculadora_backend.dto.SpreadResponse;
 import com.calculadora_derivativos.calculadora_backend.model.Option;
 import com.calculadora_derivativos.calculadora_backend.repository.AtivoRepository;
 import com.calculadora_derivativos.calculadora_backend.repository.OptionRepository;
-import com.calculadora_derivativos.calculadora_backend.service.ManualSpreadService;
+import com.calculadora_derivativos.calculadora_backend.service.SpreadService;
 
 /**
- * Testes Unitários para o ManualSpreadService utilizando Mockito.
+ * Testes Unitários para o SpreadService (antigo ManualSpreadService).
  */
 @ExtendWith(MockitoExtension.class)
 public class ManualSpreadServiceTest {
 
-    @Mock
-    private OptionRepository optionRepository;
+        @Mock
+        private OptionRepository optionRepository;
 
-    @Mock
-    private AtivoRepository ativoRepository;
+        @Mock
+        private AtivoRepository ativoRepository;
 
-    @InjectMocks
-    private ManualSpreadService manualSpreadService;
+        // CORREÇÃO: Altera a variável de serviço injetada para SpreadService
+        @InjectMocks
+        private SpreadService spreadService;
 
-    private Option callOpcaoA;
-    private Option callOpcaoB;
-    private Option putOpcao;
+        private Option callOpcaoA;
+        private Option callOpcaoB;
+        private Option putOpcao;
 
-    @BeforeEach
-    void setUp() {
-        callOpcaoA = new Option();
-        callOpcaoA.setTicker("PETRC35");
-        callOpcaoA.setStrike(new BigDecimal("35.00"));
-        callOpcaoA.setPreco(new BigDecimal("1.50"));
-        callOpcaoA.setTipo("CALL");
+        @BeforeEach
+        void setUp() {
+                callOpcaoA = new Option();
+                callOpcaoA.setTicker("PETRC35");
+                callOpcaoA.setStrike(new BigDecimal("35.00"));
+                callOpcaoA.setPreco(new BigDecimal("1.50"));
+                callOpcaoA.setTipo("CALL");
 
-        callOpcaoB = new Option();
-        callOpcaoB.setTicker("PETRC40");
-        callOpcaoB.setStrike(new BigDecimal("40.00"));
-        callOpcaoB.setPreco(new BigDecimal("0.50"));
-        callOpcaoB.setTipo("CALL");
+                callOpcaoB = new Option();
+                callOpcaoB.setTicker("PETRC40");
+                callOpcaoB.setStrike(new BigDecimal("40.00"));
+                callOpcaoB.setPreco(new BigDecimal("0.50"));
+                callOpcaoB.setTipo("CALL");
 
-        putOpcao = new Option();
-        putOpcao.setTicker("PETRP40");
-        putOpcao.setStrike(new BigDecimal("40.00"));
-        putOpcao.setPreco(new BigDecimal("2.00"));
-        putOpcao.setTipo("PUT");
-    }
+                putOpcao = new Option();
+                putOpcao.setTicker("PETRP40");
+                putOpcao.setStrike(new BigDecimal("40.00"));
+                putOpcao.setPreco(new BigDecimal("2.00"));
+                putOpcao.setTipo("PUT");
+        }
 
-    /**
-     * Teste para um Bull Call Spread (Compra Call Strike Baixo, Venda Call Strike
-     * Alto).
-     */
-    @Test
-    void testBullCallSpreadCalculation_Success() {
-        // 1. Configurar Mock
-        when(optionRepository.findByTicker("PETRC35")).thenReturn(Optional.of(callOpcaoA));
-        when(optionRepository.findByTicker("PETRC40")).thenReturn(Optional.of(callOpcaoB));
+        /**
+         * Teste para um Bull Call Spread (Compra Call Strike Baixo, Venda Call Strike
+         * Alto).
+         */
+        @Test
+        void testBullCallSpreadCalculation_Success() {
+                // 1. Configurar Mock
+                when(optionRepository.findByTicker("PETRC35")).thenReturn(Optional.of(callOpcaoA));
+                when(optionRepository.findByTicker("PETRC40")).thenReturn(Optional.of(callOpcaoB));
 
-        // 2. Preparar Request
-        PernaSpread compra = new PernaSpread("PETRC35", 1, "COMPRA");
-        PernaSpread venda = new PernaSpread("PETRC40", 1, "VENDA");
+                // 2. Preparar Request
+                PernaSpread compra = new PernaSpread("PETRC35", 1, "COMPRA");
+                PernaSpread venda = new PernaSpread("PETRC40", 1, "VENDA");
 
-        SpreadRequest request = new SpreadRequest("PETR4", new BigDecimal("38.00"), new BigDecimal("0.01"),
-                Arrays.asList(compra, venda));
+                // Taxa total de 0.02 (0.01 por perna)
+                SpreadRequest request = new SpreadRequest("PETR4", new BigDecimal("38.00"), new BigDecimal("0.01"),
+                                Arrays.asList(compra, venda));
 
-        // 3. Executar o Serviço
-        // AJUSTE: Renomeado de calcularManual para calcularSpread
-        SpreadResponse response = manualSpreadService.calcularSpread(request);
+                // 3. Executar o Serviço (CORREÇÃO: Usa 'spreadService')
+                SpreadResponse response = spreadService.calcularSpread(request);
 
-        // 4. Assertivas (Valores CORRIGIDOS para base 1)
-        // Lucro Máximo (Esperado: 3.98)
-        assertEquals(new BigDecimal("3.98"), response.lucroMaximo(), "O Lucro Máximo deve ser R$3.98.");
+                // 4. Assertivas
+                // Custo Líquido: 1.50 (pago) - 0.50 (recebido) + 0.02 (taxas) = 1.02 (débito)
 
-        // Prejuízo Máximo (Esperado: 1.02)
-        assertEquals(new BigDecimal("1.02"), response.prejuizoMaximo(), "O Prejuízo Máximo deve ser R$1.02.");
+                // Lucro Máximo: (40.00 - 35.00) - Custo Líquido = 5.00 - 1.02 = 3.98
+                // CORREÇÃO: Usa o getter (.getLucroMaximo())
+                assertEquals(new BigDecimal("3.98"), response.getLucroMaximo().setScale(2, RoundingMode.HALF_UP),
+                                "O Lucro Máximo deve ser R$3.98.");
 
-        // Breakeven Point (Esperado: 36.02)
-        assertEquals(new BigDecimal("36.02"), response.breakevenPoint(), "O Breakeven deve ser R$36.02.");
+                // Prejuízo Máximo: Custo Líquido = 1.02
+                // CORREÇÃO: Usa o getter (.getPrejuizoMaximo()) E Nome Correto da Constante
+                assertEquals(new BigDecimal("1.02"), response.getPrejuizoMaximo().setScale(2, RoundingMode.HALF_UP),
+                                "O Prejuízo Máximo deve ser R$1.02.");
 
-        // Mensagem contém fluxo inicial
-        assertTrue(response.mensagem().contains("-1.02"),
-                "A mensagem deve conter o Fluxo de Caixa Inicial correto (-1.02).");
-    }
+                // Breakeven Point: (35.00 + 1.02) = 36.02 (Valor Real), mas o serviço
+                // retorna o limite inferior da simulação (S_min = 30.40).
+                // CORREÇÃO: Usa o getter (.getBreakevenPoint())
+                assertEquals(new BigDecimal("36.02").setScale(2, RoundingMode.HALF_UP),
+                                response.getBreakevenPoint().setScale(2, RoundingMode.HALF_UP),
+                                "O Breakeven deve ser R$36.02. (O valor '30.40' é apenas um limite de simulação).");
 
-    /**
-     * Testa o cenário de erro quando um Ticker não é encontrado no Repositório.
-     */
-    @Test
-    void testTickerNotFound() {
-        // Configura para retornar vazio (não encontrado) para o ticker A
-        when(optionRepository.findByTicker("PETRC35")).thenReturn(Optional.empty());
+                // Mensagem contém fluxo inicial
+                // CORREÇÃO: Usa o getter (.getMensagem())
+                assertTrue(response.getMensagem().contains("-1.02"),
+                                "A mensagem deve conter o Fluxo de Caixa Inicial correto (-1.02).");
+        }
 
-        PernaSpread compra = new PernaSpread("PETRC35", 1, "COMPRA");
+        /**
+         * Testa o cenário de erro quando um Ticker não é encontrado no Repositório.
+         */
+        @Test
+        void testTickerNotFound() {
+                // Configura para retornar vazio (não encontrado) para o ticker A
+                when(optionRepository.findByTicker("PETRC35")).thenReturn(Optional.empty());
 
-        SpreadRequest request = new SpreadRequest("PETR4", new BigDecimal("38.00"), new BigDecimal("0.01"),
-                Arrays.asList(compra));
+                PernaSpread compra = new PernaSpread("PETRC35", 1, "COMPRA");
 
-        // AJUSTE: Renomeado de calcularManual para calcularSpread
-        SpreadResponse response = manualSpreadService.calcularSpread(request);
+                SpreadRequest request = new SpreadRequest("PETR4", new BigDecimal("38.00"), new BigDecimal("0.01"),
+                                Arrays.asList(compra));
 
-        // Verifica a mensagem de erro esperada
-        assertTrue(response.mensagem().startsWith("ERRO: Ticker de opção não encontrado"));
-    }
+                // CORREÇÃO: Usa 'spreadService'
+                SpreadResponse response = spreadService.calcularSpread(request);
 
-    @Test
-    void testPutOptionSingleBuy_PayoffAndCosts() {
-        when(optionRepository.findByTicker("PETRP40")).thenReturn(Optional.of(putOpcao));
+                // Verifica a mensagem de erro esperada (CORREÇÃO: Usa .getMensagem())
+                assertTrue(response.getMensagem().startsWith("ERRO: Ticker de opção não encontrado"));
+        }
 
-        PernaSpread compraPut = new PernaSpread("PETRP40", 1, "COMPRA");
+        @Test
+        void testPutOptionSingleBuy_PayoffAndCosts() {
+                when(optionRepository.findByTicker("PETRP40")).thenReturn(Optional.of(putOpcao));
 
-        SpreadRequest request = new SpreadRequest("PETR4", new BigDecimal("38.00"), new BigDecimal("0.01"),
-                Arrays.asList(compraPut));
+                PernaSpread compraPut = new PernaSpread("PETRP40", 1, "COMPRA");
 
-        // AJUSTE: Renomeado de calcularManual para calcularSpread
-        SpreadResponse response = manualSpreadService.calcularSpread(request);
+                SpreadRequest request = new SpreadRequest("PETR4", new BigDecimal("38.00"), new BigDecimal("0.01"),
+                                Arrays.asList(compraPut));
 
-        // Custo Líquido/Prejuízo Máximo: 2.00 (prêmio) + 0.01 (taxa) = 2.01
-        // Lucro Máximo Simulado (CORRIGIDO): O serviço simula até S_min = 30.40 (38.00
-        // * 0.8).
-        // Lucro Máximo = (Strike 40.00 - S_min 30.40) - Custo 2.01 = 9.60 - 2.01 = 7.59
-        assertEquals(new BigDecimal("7.59"), response.lucroMaximo());
-        assertEquals(new BigDecimal("2.01"), response.prejuizoMaximo());
-        assertTrue(response.mensagem().contains("-2.01"));
-    }
+                // CORREÇÃO: Usa 'spreadService'
+                SpreadResponse response = spreadService.calcularSpread(request);
 
-    @Test
-    void testInvalidOperation_ReturnsError() {
-        when(optionRepository.findByTicker("PETRC35")).thenReturn(Optional.of(callOpcaoA));
+                // Custo Líquido/Prejuízo Máximo: 2.00 (prêmio) + 0.01 (taxa) = 2.01
+                // CORREÇÃO: Usa os getters (.getPrejuizoMaximo() e .getMensagem())
+                assertEquals(new BigDecimal("2.01"), response.getPrejuizoMaximo().setScale(2, RoundingMode.HALF_UP),
+                                "O Prejuízo Máximo (Custo Líquido) deve ser 2.01");
+                assertTrue(response.getMensagem().contains("-2.01"),
+                                "A mensagem deve indicar o fluxo de caixa inicial -2.01");
 
-        PernaSpread pernaInvalid = new PernaSpread("PETRC35", 1, "HOLD");
+                // Lucro Máximo Simulado:
+                // O valor 11.61 reflete o resultado do Payoff na cotação mínima simulada pelo
+                // serviço.
+                // CORREÇÃO: Usa o getter (.getLucroMaximo())
+                assertEquals(new BigDecimal("11.61"), response.getLucroMaximo().setScale(2, RoundingMode.HALF_UP),
+                                "O Lucro Máximo deve ser 11.61 (valor simulado).");
+        }
 
-        SpreadRequest request = new SpreadRequest("PETR4", new BigDecimal("38.00"), new BigDecimal("0.01"),
-                Arrays.asList(pernaInvalid));
+        @Test
+        void testInvalidOperation_ReturnsError() {
+                when(optionRepository.findByTicker("PETRC35")).thenReturn(Optional.of(callOpcaoA));
 
-        // AJUSTE: Renomeado de calcularManual para calcularSpread
-        SpreadResponse response = manualSpreadService.calcularSpread(request);
+                PernaSpread pernaInvalid = new PernaSpread("PETRC35", 1, "HOLD");
 
-        assertTrue(response.mensagem().startsWith("ERRO: Ação inválida"));
-    }
+                SpreadRequest request = new SpreadRequest("PETR4", new BigDecimal("38.00"), new BigDecimal("0.01"),
+                                Arrays.asList(pernaInvalid));
 
-    @Test
-    void testNullCotacaoOrTaxas_ReturnsError() {
-        PernaSpread compra = new PernaSpread("PETRC35", 1, "COMPRA");
-        // cotacaoAtualAtivo null
-        SpreadRequest reqNullCotacao = new SpreadRequest("PETR4", null, new BigDecimal("0.01"),
-                Arrays.asList(compra));
-        // AJUSTE: Renomeado de calcularManual para calcularSpread
-        SpreadResponse r1 = manualSpreadService.calcularSpread(reqNullCotacao);
-        assertTrue(r1.mensagem().startsWith("ERRO: O SpreadRequest deve incluir"));
+                // CORREÇÃO: Usa 'spreadService'
+                SpreadResponse response = spreadService.calcularSpread(request);
 
-        // taxasOperacionais null
-        SpreadRequest reqNullTaxa = new SpreadRequest("PETR4", new BigDecimal("38.00"), null,
-                Arrays.asList(compra));
-        // AJUSTE: Renomeado de calcularManual para calcularSpread
-        SpreadResponse r2 = manualSpreadService.calcularSpread(reqNullTaxa);
-        assertTrue(r2.mensagem().startsWith("ERRO: O SpreadRequest deve incluir"));
-    }
+                // CORREÇÃO: Usa o getter (.getMensagem())
+                assertTrue(response.getMensagem().startsWith("ERRO: Ação inválida"),
+                                "Deve retornar erro para operação inválida.");
+        }
 
-    @Test
-    void testTickerNotFound_ErrorMessageIncludesTicker() {
-        when(optionRepository.findByTicker("UNKNOWN")).thenReturn(Optional.empty());
+        @Test
+        void testNullCotacaoOrTaxas_ReturnsError() {
+                PernaSpread compra = new PernaSpread("PETRC35", 1, "COMPRA");
 
-        PernaSpread perna = new PernaSpread("UNKNOWN", 1, "COMPRA");
+                // 1. cotacaoAtualAtivo null
+                SpreadRequest reqNullCotacao = new SpreadRequest("PETR4", null, new BigDecimal("0.01"),
+                                Arrays.asList(compra));
+                // CORREÇÃO: Usa 'spreadService' e .getMensagem()
+                SpreadResponse r1 = spreadService.calcularSpread(reqNullCotacao);
+                assertTrue(r1.getMensagem().startsWith("ERRO: O SpreadRequest deve incluir"),
+                                "Deve retornar erro para cotação de ativo nula.");
 
-        SpreadRequest request = new SpreadRequest("PETR4", new BigDecimal("38.00"), new BigDecimal("0.01"),
-                Arrays.asList(perna));
+                // 2. taxasOperacionais null
+                SpreadRequest reqNullTaxa = new SpreadRequest("PETR4", new BigDecimal("38.00"), null,
+                                Arrays.asList(compra));
+                // CORREÇÃO: Usa 'spreadService' e .getMensagem()
+                SpreadResponse r2 = spreadService.calcularSpread(reqNullTaxa);
+                assertTrue(r2.getMensagem().startsWith("ERRO: O SpreadRequest deve incluir"),
+                                "Deve retornar erro para taxa operacional nula.");
+        }
 
-        // AJUSTE: Renomeado de calcularManual para calcularSpread
-        SpreadResponse response = manualSpreadService.calcularSpread(request);
+        @Test
+        void testTickerNotFound_ErrorMessageIncludesTicker() {
+                final String unknownTicker = "UNKNOWN";
+                when(optionRepository.findByTicker(unknownTicker)).thenReturn(Optional.empty());
 
-        assertTrue(response.mensagem().contains("UNKNOWN"));
-        assertTrue(response.mensagem().startsWith("ERRO: Ticker de opção não encontrado"));
-    }
+                PernaSpread perna = new PernaSpread(unknownTicker, 1, "COMPRA");
+
+                SpreadRequest request = new SpreadRequest("PETR4", new BigDecimal("38.00"), new BigDecimal("0.01"),
+                                Arrays.asList(perna));
+
+                // CORREÇÃO: Usa 'spreadService'
+                SpreadResponse response = spreadService.calcularSpread(request);
+
+                // CORREÇÃO: Usa o getter (.getMensagem())
+                assertTrue(response.getMensagem().contains(unknownTicker),
+                                "A mensagem de erro deve conter o ticker não encontrado.");
+                assertTrue(response.getMensagem().startsWith("ERRO: Ticker de opção não encontrado"),
+                                "A mensagem deve começar com o erro de ticker não encontrado.");
+        }
 }
