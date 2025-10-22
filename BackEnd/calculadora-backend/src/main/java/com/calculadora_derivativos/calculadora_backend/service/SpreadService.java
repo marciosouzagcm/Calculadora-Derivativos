@@ -3,11 +3,9 @@ package com.calculadora_derivativos.calculadora_backend.service;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -35,16 +33,16 @@ public class SpreadService implements CalculadoraSpreadService {
 
     // --- CLASSES AUXILIARES (Record) ---
     private record PernaCalculada(
-             String ticker, String tipoOpcao, BigDecimal strike, int quantidade,
-             String acao, BigDecimal preco) {
+            String ticker, String tipoOpcao, BigDecimal strike, int quantidade,
+            String acao, BigDecimal preco) {
     }
 
     // Resultado do Payoff por Simulação. Adiciona o Prêmio Líquido Unitário (para o
     // cálculo das métricas finais)
     private record ResultadoPayoff(
-             BigDecimal lucroMaximoBruto, BigDecimal prejuizoMaximoBruto,
-             BigDecimal breakevenPoint, BigDecimal premioLiquidoUnitario,
-             BigDecimal ganhoMaximoStrikeUnitario, BigDecimal riscoMaximoTeoricoUnitario) {
+            BigDecimal lucroMaximoBruto, BigDecimal prejuizoMaximoBruto,
+            BigDecimal breakevenPoint, BigDecimal premioLiquidoUnitario,
+            BigDecimal ganhoMaximoStrikeUnitario, BigDecimal riscoMaximoTeoricoUnitario) {
     }
 
     public SpreadService(OptionRepository optionRepository, AtivoRepository ativoRepository) {
@@ -55,20 +53,20 @@ public class SpreadService implements CalculadoraSpreadService {
     // --- MÉTODO AUXILIAR PARA RESPOSTAS DE ERRO (Refatoração) ---
     private SpreadResponse createErrorResponse(String mensagem, String nomeEstrategia) {
         return SpreadResponse.builder()
-                 .mensagem(mensagem)
-                 .nomeEstrategia(nomeEstrategia)
-                 .lucroMaximo(BigDecimal.ZERO)
-                 .prejuizoMaximo(BigDecimal.ZERO)
-                 .breakevenPoint(BigDecimal.ZERO)
-                 .pernasExecutadas(List.of())
-                 .custoLiquido(BigDecimal.ZERO)
-                 .premioLiquidoUnitario(BigDecimal.ZERO)
-                 .ganhoMaximoStrikeUnitario(BigDecimal.ZERO)
-                 .riscoMaximoTeoricoUnitario(BigDecimal.ZERO)
-                 .lucroMaximoLiquidoTotal(BigDecimal.ZERO)
-                 .riscoMaximoLiquidoTotal(BigDecimal.ZERO)
-                 .relacaoRiscoRetornoLiquida(BigDecimal.ZERO)
-                 .build();
+                .mensagem(mensagem)
+                .nomeEstrategia(nomeEstrategia)
+                .lucroMaximo(BigDecimal.ZERO)
+                .prejuizoMaximo(BigDecimal.ZERO)
+                .breakevenPoint(BigDecimal.ZERO)
+                .pernasExecutadas(List.of())
+                .custoLiquido(BigDecimal.ZERO)
+                .premioLiquidoUnitario(BigDecimal.ZERO)
+                .ganhoMaximoStrikeUnitario(BigDecimal.ZERO)
+                .riscoMaximoTeoricoUnitario(BigDecimal.ZERO)
+                .lucroMaximoLiquidoTotal(BigDecimal.ZERO)
+                .riscoMaximoLiquidoTotal(BigDecimal.ZERO)
+                .relacaoRiscoRetornoLiquida(BigDecimal.ZERO)
+                .build();
     }
 
     // --- MÉTODO PRINCIPAL DA API (CÁLCULO MANUAL) ---
@@ -81,15 +79,15 @@ public class SpreadService implements CalculadoraSpreadService {
         // Tratamento de erro 1: Valores nulos essenciais
         if (request.cotacaoAtualAtivo() == null || request.taxasOperacionais() == null) {
             return createErrorResponse(
-                         "ERRO: O SpreadRequest deve incluir a cotação atual do ativo e as taxas operacionais.",
-                         "Erro");
+                    "ERRO: O SpreadRequest deve incluir a cotação atual do ativo e as taxas operacionais.",
+                    "Erro");
         }
 
         // Tratamento de erro 2: Lista de pernas vazia
         if (pernas == null || pernas.isEmpty()) {
             return createErrorResponse(
-                         "ERRO: A lista de pernas (opções) está vazia.",
-                         "Erro");
+                    "ERRO: A lista de pernas (opções) está vazia.",
+                    "Erro");
         }
 
         // 1. OBTENDO DADOS E CALCULANDO CUSTO LÍQUIDO TOTAL
@@ -108,8 +106,8 @@ public class SpreadService implements CalculadoraSpreadService {
             // Tratamento de erro 3: Ticker não encontrado
             if (optionOptional.isEmpty()) {
                 return createErrorResponse(
-                         "ERRO: Ticker de opção não encontrado no banco de dados: " + ticker,
-                         "Erro");
+                        "ERRO: Ticker de opção não encontrado no banco de dados: " + ticker,
+                        "Erro");
             }
 
             Option dadosOpcao = optionOptional.get();
@@ -133,52 +131,52 @@ public class SpreadService implements CalculadoraSpreadService {
             } else {
                 // Tratamento de erro 4: Operação inválida
                 return createErrorResponse(
-                         "ERRO: Ação inválida para o ticker " + ticker + ". Use 'COMPRA' ou 'VENDA'.",
-                         "Erro");
+                        "ERRO: Ação inválida para o ticker " + ticker + ". Use 'COMPRA' ou 'VENDA'.",
+                        "Erro");
             }
 
             // Adiciona a perna calculada para o Payoff
             pernasParaCalculo.add(new PernaCalculada(
-                         ticker, dadosOpcao.getTipo(), dadosOpcao.getStrike().setScale(SCALE, ROUNDING_MODE),
-                         perna.quantidade(), perna.operacao(), precoPremio));
+                    ticker, dadosOpcao.getTipo(), dadosOpcao.getStrike().setScale(SCALE, ROUNDING_MODE),
+                    perna.quantidade(), perna.operacao(), precoPremio));
         }
 
         // 2. CHAMADA DA LÓGICA DE PAYOFF BRUTO
         ResultadoPayoff resultadoBruto = this.calcularOtimizacao(pernasParaCalculo, custoLiquidoTotal,
-                         precoAtualSubjacente, premioLiquidoTotalBruto);
+                precoAtualSubjacente, premioLiquidoTotalBruto);
 
         // 3. CALCULAR AS MÉTRICAS LÍQUIDAS TOTAIS
 
         BigDecimal lucroMaximoLiquidoTotal = calcularLucroMaximoLiquidoTotal(
-                         resultadoBruto.lucroMaximoBruto(), resultadoBruto.premioLiquidoUnitario(),
-                         resultadoBruto.ganhoMaximoStrikeUnitario());
+                resultadoBruto.lucroMaximoBruto(), resultadoBruto.premioLiquidoUnitario(),
+                resultadoBruto.ganhoMaximoStrikeUnitario());
 
         BigDecimal riscoMaximoLiquidoTotal = calcularRiscoMaximoLiquidoTotal(
-                         resultadoBruto.prejuizoMaximoBruto().abs(),
-                         resultadoBruto.riscoMaximoTeoricoUnitario());
+                resultadoBruto.prejuizoMaximoBruto().abs(),
+                resultadoBruto.riscoMaximoTeoricoUnitario());
 
         BigDecimal relacaoRiscoRetornoLiquida = calcularRelacaoRiscoRetornoLiquida(
-                         lucroMaximoLiquidoTotal, riscoMaximoLiquidoTotal);
+                lucroMaximoLiquidoTotal, riscoMaximoLiquidoTotal);
 
         // 4. Retorno Final (Ajustado ao novo Record SpreadResponse usando Builder)
         return SpreadResponse.builder()
-                 .mensagem("Sucesso! Spread de " + ativoSubjacente + " calculado. Fluxo Inicial Líquido: R$"
-                             + custoLiquidoTotal.setScale(2, ROUNDING_MODE))
-                 .nomeEstrategia("Spread Manual")
-                 .lucroMaximo(resultadoBruto.lucroMaximoBruto().setScale(2, ROUNDING_MODE))
-                 .prejuizoMaximo(resultadoBruto.prejuizoMaximoBruto().abs().setScale(2, ROUNDING_MODE))
-                 .breakevenPoint(resultadoBruto.breakevenPoint().setScale(2, ROUNDING_MODE))
-                 .pernasExecutadas(pernas)
-                 .custoLiquido(custoLiquidoTotal.setScale(2, ROUNDING_MODE))
-                 // Campos UNITÁRIOS (com SCALE=4)
-                 .premioLiquidoUnitario(resultadoBruto.premioLiquidoUnitario().setScale(SCALE, ROUNDING_MODE))
-                 .ganhoMaximoStrikeUnitario(resultadoBruto.ganhoMaximoStrikeUnitario().setScale(SCALE, ROUNDING_MODE))
-                 .riscoMaximoTeoricoUnitario(resultadoBruto.riscoMaximoTeoricoUnitario().setScale(SCALE, ROUNDING_MODE))
-                 // Campos LÍQUIDOS TOTAIS (com SCALE=2 para exibição monetária)
-                 .lucroMaximoLiquidoTotal(lucroMaximoLiquidoTotal.setScale(2, ROUNDING_MODE))
-                 .riscoMaximoLiquidoTotal(riscoMaximoLiquidoTotal.setScale(2, ROUNDING_MODE))
-                 .relacaoRiscoRetornoLiquida(relacaoRiscoRetornoLiquida.setScale(2, ROUNDING_MODE))
-                 .build();
+                .mensagem("Sucesso! Spread de " + ativoSubjacente + " calculado. Fluxo Inicial Líquido: R$"
+                        + custoLiquidoTotal.setScale(2, ROUNDING_MODE))
+                .nomeEstrategia("Spread Manual")
+                .lucroMaximo(resultadoBruto.lucroMaximoBruto().setScale(2, ROUNDING_MODE))
+                .prejuizoMaximo(resultadoBruto.prejuizoMaximoBruto().abs().setScale(2, ROUNDING_MODE))
+                .breakevenPoint(resultadoBruto.breakevenPoint().setScale(2, ROUNDING_MODE))
+                .pernasExecutadas(pernas)
+                .custoLiquido(custoLiquidoTotal.setScale(2, ROUNDING_MODE))
+                // Campos UNITÁRIOS (com SCALE=4)
+                .premioLiquidoUnitario(resultadoBruto.premioLiquidoUnitario().setScale(SCALE, ROUNDING_MODE))
+                .ganhoMaximoStrikeUnitario(resultadoBruto.ganhoMaximoStrikeUnitario().setScale(SCALE, ROUNDING_MODE))
+                .riscoMaximoTeoricoUnitario(resultadoBruto.riscoMaximoTeoricoUnitario().setScale(SCALE, ROUNDING_MODE))
+                // Campos LÍQUIDOS TOTAIS (com SCALE=2 para exibição monetária)
+                .lucroMaximoLiquidoTotal(lucroMaximoLiquidoTotal.setScale(2, ROUNDING_MODE))
+                .riscoMaximoLiquidoTotal(riscoMaximoLiquidoTotal.setScale(2, ROUNDING_MODE))
+                .relacaoRiscoRetornoLiquida(relacaoRiscoRetornoLiquida.setScale(2, ROUNDING_MODE))
+                .build();
     }
 
     // --- FUNÇÃO AUXILIAR PARA PAYOFF UNITÁRIO (Refatoração) ---
@@ -195,7 +193,7 @@ public class SpreadService implements CalculadoraSpreadService {
 
     // --- FUNÇÃO RESPONSÁVEL PELA LÓGICA DE PAYOFF E OTIMIZAÇÃO (BRUTA) ---
     private ResultadoPayoff calcularOtimizacao(List<PernaCalculada> pernas, BigDecimal custoLiquido,
-             BigDecimal precoAtualSubjacente, BigDecimal premioLiquidoTotalBruto) {
+            BigDecimal precoAtualSubjacente, BigDecimal premioLiquidoTotalBruto) {
 
         // Inicializa com valores extremos para otimização
         BigDecimal lucroMaximo = new BigDecimal("-999999999.00").setScale(SCALE, ROUNDING_MODE);
@@ -209,7 +207,7 @@ public class SpreadService implements CalculadoraSpreadService {
         BigDecimal rangeSimulacao = precoAtualSubjacente.multiply(new BigDecimal("0.2")).setScale(SCALE, ROUNDING_MODE);
 
         BigDecimal precoMinimo = precoAtualSubjacente.subtract(rangeSimulacao).max(BigDecimal.ZERO).setScale(SCALE,
-                 ROUNDING_MODE);
+                ROUNDING_MODE);
         BigDecimal precoMaximo = precoAtualSubjacente.add(rangeSimulacao).setScale(SCALE, ROUNDING_MODE);
 
         BigDecimal precoSimulado = precoMinimo;
@@ -266,7 +264,7 @@ public class SpreadService implements CalculadoraSpreadService {
         // Verifica se é um Spread Vertical simples (2 pernas, mesma quantidade, mesmo
         // tipo)
         if (pernas.size() == 2 && pernas.get(0).quantidade() == pernas.get(1).quantidade()
-                 && pernas.get(0).tipoOpcao().equals(pernas.get(1).tipoOpcao())) {
+                && pernas.get(0).tipoOpcao().equals(pernas.get(1).tipoOpcao())) {
 
             PernaCalculada perna1 = pernas.get(0);
             PernaCalculada perna2 = pernas.get(1);
@@ -280,7 +278,7 @@ public class SpreadService implements CalculadoraSpreadService {
 
             // Prêmio Unitário Bruto (Prêmio Líquido Total Bruto / Quantidade)
             premioLiquidoUnitario = premioLiquidoTotalBruto.divide(BigDecimal.valueOf(quantidade), SCALE,
-                     ROUNDING_MODE);
+                    ROUNDING_MODE);
             // Diferença Unitária dos Strikes
             ganhoMaximoStrikeUnitario = k_alto.subtract(k_baixo);
 
@@ -291,12 +289,12 @@ public class SpreadService implements CalculadoraSpreadService {
 
                 // CORREÇÃO DO BREAKEVEN PARA SPREAD DE DÉBITO (Call/Put Comprado K Menor)
                 Optional<PernaCalculada> pernaCompra = pernas.stream()
-                         .filter(p -> "COMPRA".equalsIgnoreCase(p.acao()))
-                         .min(Comparator.comparing(PernaCalculada::strike)); 
+                        .filter(p -> "COMPRA".equalsIgnoreCase(p.acao()))
+                        .min(Comparator.comparing(PernaCalculada::strike)); 
 
                 if (pernaCompra.isPresent()) {
                     BigDecimal custoUnitarioLiquido = custoLiquido.abs().divide(BigDecimal.valueOf(quantidade), SCALE,
-                             ROUNDING_MODE);
+                            ROUNDING_MODE);
                     breakevenPointCorrigido = pernaCompra.get().strike().add(custoUnitarioLiquido);
                 }
 
@@ -307,12 +305,12 @@ public class SpreadService implements CalculadoraSpreadService {
 
                 // CORREÇÃO DO BREAKEVEN PARA SPREAD DE CRÉDITO
                 Optional<PernaCalculada> pernaVenda = pernas.stream()
-                         .filter(p -> "VENDA".equalsIgnoreCase(p.acao()))
-                         .min(Comparator.comparing(PernaCalculada::strike)); 
+                        .filter(p -> "VENDA".equalsIgnoreCase(p.acao()))
+                        .min(Comparator.comparing(PernaCalculada::strike)); 
 
                 if (pernaVenda.isPresent()) {
                     BigDecimal receitaUnitarioLiquido = custoLiquido.abs().divide(BigDecimal.valueOf(quantidade), SCALE,
-                             ROUNDING_MODE);
+                            ROUNDING_MODE);
                     // BULL PUT (PUT): Breakeven = Strike de Venda - Prêmio Unitário
                     if ("PUT".equalsIgnoreCase(pernaVenda.get().tipoOpcao())) {
                         breakevenPointCorrigido = pernaVenda.get().strike().subtract(receitaUnitarioLiquido);
@@ -326,7 +324,7 @@ public class SpreadService implements CalculadoraSpreadService {
 
             // CORREÇÃO DE PAYOFF LIMITADO (FINAL)
             BigDecimal diferencaStrikesTotal = ganhoMaximoStrikeUnitario
-                     .multiply(BigDecimal.valueOf(pernas.get(0).quantidade()));
+                    .multiply(BigDecimal.valueOf(pernas.get(0).quantidade()));
 
             if (custoLiquido.compareTo(BigDecimal.ZERO) < 0) {
                 // Débito (Custo Líquido é negativo)
@@ -340,18 +338,18 @@ public class SpreadService implements CalculadoraSpreadService {
         }
 
         return new ResultadoPayoff(
-                 lucroMaximo.setScale(SCALE, ROUNDING_MODE),
-                 prejuizoMaximo.setScale(SCALE, ROUNDING_MODE),
-                 breakevenPointCorrigido.setScale(SCALE, ROUNDING_MODE),
-                 premioLiquidoUnitario,
-                 ganhoMaximoStrikeUnitario,
-                 riscoMaximoTeoricoUnitario);
+                lucroMaximo.setScale(SCALE, ROUNDING_MODE),
+                prejuizoMaximo.setScale(SCALE, ROUNDING_MODE),
+                breakevenPointCorrigido.setScale(SCALE, ROUNDING_MODE),
+                premioLiquidoUnitario,
+                ganhoMaximoStrikeUnitario,
+                riscoMaximoTeoricoUnitario);
     }
 
     // --- FUNÇÕES DE CÁLCULO LÍQUIDO TOTAIS ---
 
     private BigDecimal calcularLucroMaximoLiquidoTotal(BigDecimal lucroMaximoBruto, BigDecimal premioLiquidoUnitario,
-             BigDecimal ganhoMaximoStrikeUnitario) {
+            BigDecimal ganhoMaximoStrikeUnitario) {
         // Refatoração: Usar BigDecimal.valueOf() para int
         if (premioLiquidoUnitario.compareTo(BigDecimal.ZERO) >= 0) {
             // CRÉDITO: Prêmio Total Bruto (unitário * contratos) - Taxas TOTAIS
@@ -360,7 +358,7 @@ public class SpreadService implements CalculadoraSpreadService {
         } else {
             // DÉBITO: (Ganho Strike Total) + (Custo Total (negativo)) - Taxas TOTAIS
             BigDecimal ganhoMaxStrikeTotal = ganhoMaximoStrikeUnitario
-                     .multiply(BigDecimal.valueOf(QUANTIDADE_CONTRATOS));
+                    .multiply(BigDecimal.valueOf(QUANTIDADE_CONTRATOS));
             BigDecimal premioTotalBruto = premioLiquidoUnitario.multiply(BigDecimal.valueOf(QUANTIDADE_CONTRATOS));
 
             return arredondarParaMoeda(ganhoMaxStrikeTotal.add(premioTotalBruto).subtract(TAXAS_TOTAIS_OPERACAO));
@@ -368,23 +366,23 @@ public class SpreadService implements CalculadoraSpreadService {
     }
 
     private BigDecimal calcularRiscoMaximoLiquidoTotal(BigDecimal riscoBrutoTotal,
-             BigDecimal riscoMaximoTeoricoUnitario) {
+            BigDecimal riscoMaximoTeoricoUnitario) {
 
         // Risco Total = (Risco Teórico Unitário * Qtd) + Taxas TOTAIS
         // Refatoração: Usar BigDecimal.valueOf() para int
         BigDecimal riscoBrutoTeoricoTotal = riscoMaximoTeoricoUnitario
-                 .multiply(BigDecimal.valueOf(QUANTIDADE_CONTRATOS));
+                .multiply(BigDecimal.valueOf(QUANTIDADE_CONTRATOS));
 
         return arredondarParaMoeda(riscoBrutoTeoricoTotal.add(TAXAS_TOTAIS_OPERACAO));
     }
 
     private BigDecimal calcularRelacaoRiscoRetornoLiquida(BigDecimal lucroMaximoLiquidoTotal,
-             BigDecimal riscoMaximoLiquidoTotal) {
+            BigDecimal riscoMaximoLiquidoTotal) {
         if (riscoMaximoLiquidoTotal.compareTo(BigDecimal.ZERO) > 0) {
             return arredondar(lucroMaximoLiquidoTotal.divide(
-                     riscoMaximoLiquidoTotal,
-                     6,
-                     SpreadFinanceiroUtils.MODO_ARREDONDAMENTO));
+                    riscoMaximoLiquidoTotal,
+                    6,
+                    SpreadFinanceiroUtils.MODO_ARREDONDAMENTO));
         } else {
             return BigDecimal.ZERO;
         }
@@ -425,12 +423,12 @@ public class SpreadService implements CalculadoraSpreadService {
                     if (compraPerna.getStrike().compareTo(vendaPerna.getStrike()) < 0) {
                         
                         List<PernaSpread> pernas = List.of(
-                            new PernaSpread(compraPerna.getTicker(), QUANTIDADE_CONTRATOS, "COMPRA"),
-                            new PernaSpread(vendaPerna.getTicker(), QUANTIDADE_CONTRATOS, "VENDA")
+                                new PernaSpread(compraPerna.getTicker(), QUANTIDADE_CONTRATOS, "COMPRA"),
+                                new PernaSpread(vendaPerna.getTicker(), QUANTIDADE_CONTRATOS, "VENDA")
                         );
 
                         SpreadRequest request = new SpreadRequest(
-                            ativoSubjacente, cotacaoAtualAtivo, taxasOperacionais, pernas);
+                                ativoSubjacente, cotacaoAtualAtivo, taxasOperacionais, pernas);
 
                         SpreadResponse candidato = calcularSpread(request);
 
@@ -446,9 +444,9 @@ public class SpreadService implements CalculadoraSpreadService {
         // Retorno Final
         if (melhorRiscoRetorno.compareTo(BigDecimal.ZERO) > 0) {
             String novaMensagem = String.format(
-                "SUCESSO: Melhor Bull Call Spread encontrado (Vencimento: %s). Relação R/R: %s.",
-                melhorSpread.getVencimento().toString(), 
-                melhorSpread.getRelacaoRiscoRetornoLiquida().setScale(2, ROUNDING_MODE));
+                    "SUCESSO: Melhor Bull Call Spread encontrado (Vencimento: %s). Relação R/R: %s.",
+                    melhorSpread.getVencimento().toString(), 
+                    melhorSpread.getRelacaoRiscoRetornoLiquida().setScale(2, ROUNDING_MODE));
 
             return melhorSpread.toBuilder().mensagem(novaMensagem).build();
         } else {
@@ -483,8 +481,8 @@ public class SpreadService implements CalculadoraSpreadService {
                     if (compraPerna.getStrike().compareTo(vendaPerna.getStrike()) > 0) {
                         
                         List<PernaSpread> pernas = List.of(
-                            new PernaSpread(compraPerna.getTicker(), QUANTIDADE_CONTRATOS, "COMPRA"),
-                            new PernaSpread(vendaPerna.getTicker(), QUANTIDADE_CONTRATOS, "VENDA")
+                                new PernaSpread(compraPerna.getTicker(), QUANTIDADE_CONTRATOS, "COMPRA"),
+                                new PernaSpread(vendaPerna.getTicker(), QUANTIDADE_CONTRATOS, "VENDA")
                         );
 
                         SpreadRequest request = new SpreadRequest(ativoSubjacente, cotacaoAtualAtivo, taxasOperacionais, pernas);
@@ -501,16 +499,16 @@ public class SpreadService implements CalculadoraSpreadService {
         
         if (melhorRiscoRetorno.compareTo(BigDecimal.ZERO) > 0) {
             String novaMensagem = String.format(
-                "SUCESSO: Melhor Bear Put Spread encontrado (Vencimento: %s). Relação R/R: %s.",
-                melhorSpread.getVencimento().toString(), 
-                melhorSpread.getRelacaoRiscoRetornoLiquida().setScale(2, ROUNDING_MODE));
+                    "SUCESSO: Melhor Bear Put Spread encontrado (Vencimento: %s). Relação R/R: %s.",
+                    melhorSpread.getVencimento().toString(), 
+                    melhorSpread.getRelacaoRiscoRetornoLiquida().setScale(2, ROUNDING_MODE));
 
             return melhorSpread.toBuilder().mensagem(novaMensagem).build();
         } else {
             return melhorSpread;
         }
     }
-    
+
     /**
      * * Otimiza o Bull Put Spread (Venda PUT K alto, Compra PUT K baixo - Crédito).
      * Objetivo: Maximizar a Relação Risco/Retorno Líquida.
@@ -538,8 +536,8 @@ public class SpreadService implements CalculadoraSpreadService {
                     if (vendaPerna.getStrike().compareTo(compraPerna.getStrike()) > 0) {
                         
                         List<PernaSpread> pernas = List.of(
-                            new PernaSpread(vendaPerna.getTicker(), QUANTIDADE_CONTRATOS, "VENDA"),
-                            new PernaSpread(compraPerna.getTicker(), QUANTIDADE_CONTRATOS, "COMPRA")
+                                new PernaSpread(vendaPerna.getTicker(), QUANTIDADE_CONTRATOS, "VENDA"),
+                                new PernaSpread(compraPerna.getTicker(), QUANTIDADE_CONTRATOS, "COMPRA")
                         );
 
                         SpreadRequest request = new SpreadRequest(ativoSubjacente, cotacaoAtualAtivo, taxasOperacionais, pernas);
@@ -556,9 +554,9 @@ public class SpreadService implements CalculadoraSpreadService {
         
         if (melhorRiscoRetorno.compareTo(BigDecimal.ZERO) > 0) {
             String novaMensagem = String.format(
-                "SUCESSO: Melhor Bull Put Spread encontrado (Vencimento: %s). Relação R/R: %s.",
-                melhorSpread.getVencimento().toString(), 
-                melhorSpread.getRelacaoRiscoRetornoLiquida().setScale(2, ROUNDING_MODE));
+                    "SUCESSO: Melhor Bull Put Spread encontrado (Vencimento: %s). Relação R/R: %s.",
+                    melhorSpread.getVencimento().toString(), 
+                    melhorSpread.getRelacaoRiscoRetornoLiquida().setScale(2, ROUNDING_MODE));
 
             return melhorSpread.toBuilder().mensagem(novaMensagem).build();
         } else {
@@ -593,8 +591,8 @@ public class SpreadService implements CalculadoraSpreadService {
                     if (vendaPerna.getStrike().compareTo(compraPerna.getStrike()) < 0) {
                         
                         List<PernaSpread> pernas = List.of(
-                            new PernaSpread(vendaPerna.getTicker(), QUANTIDADE_CONTRATOS, "VENDA"),
-                            new PernaSpread(compraPerna.getTicker(), QUANTIDADE_CONTRATOS, "COMPRA")
+                                new PernaSpread(vendaPerna.getTicker(), QUANTIDADE_CONTRATOS, "VENDA"),
+                                new PernaSpread(compraPerna.getTicker(), QUANTIDADE_CONTRATOS, "COMPRA")
                         );
 
                         SpreadRequest request = new SpreadRequest(ativoSubjacente, cotacaoAtualAtivo, taxasOperacionais, pernas);
@@ -611,9 +609,9 @@ public class SpreadService implements CalculadoraSpreadService {
         
         if (melhorRiscoRetorno.compareTo(BigDecimal.ZERO) > 0) {
             String novaMensagem = String.format(
-                "SUCESSO: Melhor Bear Call Spread encontrado (Vencimento: %s). Relação R/R: %s.",
-                melhorSpread.getVencimento().toString(), 
-                melhorSpread.getRelacaoRiscoRetornoLiquida().setScale(2, ROUNDING_MODE));
+                    "SUCESSO: Melhor Bear Call Spread encontrado (Vencimento: %s). Relação R/R: %s.",
+                    melhorSpread.getVencimento().toString(), 
+                    melhorSpread.getRelacaoRiscoRetornoLiquida().setScale(2, ROUNDING_MODE));
 
             return melhorSpread.toBuilder().mensagem(novaMensagem).build();
         } else {
@@ -621,44 +619,52 @@ public class SpreadService implements CalculadoraSpreadService {
         }
     }
 
-    // --- MÉTODO DE OTIMIZAÇÃO UNIFICADA (BUSCA AUTOMÁTICA) ---
-
+    // =============================================================================
+    // --- NOVO MÉTODO UNIFICADO (CORRIGE O ERRO DO CONTROLLER) ---
+    // =============================================================================
+    
     /**
-     * Otimiza e compara as 4 principais estratégias direcionais (2 de Alta, 2 de
-     * Baixa)
-     * e retorna a que oferecer o maior Lucro Máximo Líquido Total.
+     * Compara as 4 estratégias verticais e retorna a que oferece o melhor resultado
+     * (maior Relação Risco/Retorno Líquida).
      */
+    @Override
     public SpreadResponse otimizarMelhorEstrategia(String ativoSubjacente, BigDecimal cotacaoAtualAtivo,
-             BigDecimal taxasOperacionais) {
+            BigDecimal taxasOperacionais) {
 
-        // 1. Otimizar as 4 estratégias individuais
-        SpreadResponse bullCall = otimizarBullCallSpread(ativoSubjacente, cotacaoAtualAtivo, taxasOperacionais);
-        SpreadResponse bearPut = otimizarBearPutSpread(ativoSubjacente, cotacaoAtualAtivo, taxasOperacionais);
-        SpreadResponse bullPut = otimizarBullPutSpread(ativoSubjacente, cotacaoAtualAtivo, taxasOperacionais);
-        SpreadResponse bearCall = otimizarBearCallSpread(ativoSubjacente, cotacaoAtualAtivo, taxasOperacionais);
+        // 1. Coleta resultados de todas as estratégias
+        List<SpreadResponse> resultados = new ArrayList<>();
+        
+        resultados.add(otimizarBullCallSpread(ativoSubjacente, cotacaoAtualAtivo, taxasOperacionais));
+        resultados.add(otimizarBearPutSpread(ativoSubjacente, cotacaoAtualAtivo, taxasOperacionais));
+        resultados.add(otimizarBullPutSpread(ativoSubjacente, cotacaoAtualAtivo, taxasOperacionais));
+        resultados.add(otimizarBearCallSpread(ativoSubjacente, cotacaoAtualAtivo, taxasOperacionais));
 
-        // 2. Colocar todas em uma lista para comparação
-        List<SpreadResponse> resultados = List.of(bullCall, bearPut, bullPut, bearCall);
+        // 2. Filtra erros e encontra a melhor Relação Risco/Retorno
+        Optional<SpreadResponse> melhorSpreadOptional = resultados.stream()
+                // Filtra os resultados que não são de erro (assumindo que "Erro" é o nome da estratégia de erro)
+                .filter(r -> !"Erro".equals(r.getNomeEstrategia())) 
+                // Encontra o spread com a maior Relação Risco/Retorno Líquida
+                .max(Comparator.comparing(SpreadResponse::getRelacaoRiscoRetornoLiquida));
 
-        // 3. Encontrar a melhor estratégia: a com maior Lucro Máximo Líquido Total
-        Optional<SpreadResponse> melhorResultado = resultados.stream()
-                 .filter(r -> !"Erro".equals(r.getNomeEstrategia())) // Filtra os erros de busca/estrutura
-                 .max(Comparator.comparing(SpreadResponse::getLucroMaximoLiquidoTotal));
-
-        // 4. Retornar o melhor resultado
-        if (melhorResultado.isPresent()) {
-            SpreadResponse melhor = melhorResultado.get();
-
+        // 3. Retorna o resultado
+        if (melhorSpreadOptional.isPresent()) {
+            SpreadResponse melhorSpread = melhorSpreadOptional.get();
+            // Constrói a mensagem final
             String novaMensagem = String.format(
-                 "SUCESSO: A melhor de 4 Estratégias Encontrada é o %s (Vencimento: %s). Lucro Máximo Líquido: R$%s.",
-                 melhor.getNomeEstrategia(), melhor.getVencimento().toString(), melhor.getLucroMaximoLiquidoTotal().setScale(2, ROUNDING_MODE));
+                    "SUCESSO: A melhor estratégia vertical geral é **%s** (Vencimento: %s). Relação R/R: %s.",
+                    melhorSpread.getNomeEstrategia(),
+                    melhorSpread.getVencimento() != null ? melhorSpread.getVencimento().toString() : "N/A", 
+                    melhorSpread.getRelacaoRiscoRetornoLiquida().setScale(2, ROUNDING_MODE));
 
-            return melhor.toBuilder().mensagem(novaMensagem).build();
+            return melhorSpread.toBuilder()
+                    .mensagem(novaMensagem)
+                    .nomeEstrategia("Melhor Estratégia Vertical") // Renomeia o título geral
+                    .build();
         } else {
-            // Tratamento de erro 5: Nenhuma estratégia otimizada
+            // Retorno de erro se nenhuma combinação válida foi encontrada
             return createErrorResponse(
-                 "ERRO: Nenhuma estratégia de spread vertical válida pôde ser otimizada para " + ativoSubjacente,
-                 "Erro");
+                    "ERRO: Não foi possível encontrar nenhuma combinação válida de Bull/Bear Spread Vertical.", 
+                    "Melhor Estratégia Vertical");
         }
     }
 }
